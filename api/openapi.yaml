@@ -1,0 +1,2090 @@
+openapi: 3.0.3
+info:
+  title: HackAeza — анализатор рисков оттока
+  version: 0.1.0
+  description: Проектный контракт API по презентации «Анализатор рисков оттока». x-required-by-case=true отмечает
+    все 11 обязательных операций; остальные — расширения проекта. Все JSON-поля в camelCase. Деньги в евроцентах,
+    даты UTC. Без оценки score=null и level=unknown. Основной вход — логин/пароль с Bearer-сессией; OIDC через Keycloak
+    — дополнительный режим. Обновление UI допускает polling или SSE. Схема описывает договорённости, но сама по
+    себе не реализует обработчики или Swagger UI.
+servers:
+- url: /
+  description: Тот же origin, что у панели; подходит localhost и VPS.
+tags:
+- name: Auth
+  description: Вход, сессия и публичная конфигурация способов входа.
+- name: Customers
+  description: Рейтинг и подробности клиентов.
+- name: Analytics
+  description: Сводка и график оттока.
+- name: Model
+  description: Настройки и расширяемый реестр признаков.
+- name: Source
+  description: Импорт исходных данных.
+- name: Updates
+  description: Живое обновление результатов.
+- name: Operations
+  description: Метрики и probes.
+- name: Documentation
+  description: Swagger UI и машиночитаемый контракт.
+security:
+- appBearer: []
+paths:
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      tags:
+      - Auth
+      summary: Вход по логину и паролю
+      description: Создаёт сессию приложения и возвращает Bearer-токен. Пароли и токены не логируются. Этот метод
+        сохраняется как обязательный вход независимо от дополнительного OIDC.
+      x-required-by-case: true
+      responses:
+        '200':
+          description: Успешный ответ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+              examples:
+                Session:
+                  $ref: '#/components/examples/Session'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              Login:
+                $ref: '#/components/examples/Login'
+  /api/v1/auth/me:
+    get:
+      operationId: getCurrentUser
+      tags:
+      - Auth
+      summary: Текущий пользователь
+      description: Возвращает пользователя проверенной сессии приложения или OIDC access token.
+      x-required-by-case: true
+      responses:
+        '200':
+          description: Успешный ответ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      tags:
+      - Auth
+      summary: Завершение текущей сессии
+      description: Отзывает текущий токен в приложении. После 204 он больше не даёт доступ к защищённым API. Для
+        OIDC фронт дополнительно завершает SSO-сессию у провайдера стандартным logout flow; токен не должен продолжать
+        приниматься этим API до своего истечения.
+      x-required-by-case: true
+      responses:
+        '204':
+          description: Текущая сессия завершена. Тела ответа нет.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/auth/config:
+    get:
+      operationId: getAuthConfig
+      tags:
+      - Auth
+      summary: Доступные способы входа
+      description: Дополнительный endpoint для UI. Возвращает публичные параметры OIDC без client secret. React
+        выполняет Authorization Code + PKCE через discovery провайдера; API принимает access token, проверяя подпись,
+        issuer, audience и срок действия. Маршруты Keycloak не дублируются в Go API.
+      x-required-by-case: false
+      responses:
+        '200':
+          description: Успешный ответ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthConfig'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      security: []
+  /api/v1/customers:
+    get:
+      operationId: listCustomers
+      tags:
+      - Customers
+      summary: Рейтинг клиентов
+      description: Список клиентов с ID, email, балансами, суммой пополнений, score, причинами и денежной оценкой.
+        Все sortBy поддерживают asc и desc. При равенстве — ID по возрастанию; null-score и null-loss всегда в конце.
+        Два последовательных запроса могут иметь разные calculation.version при обновлении данных.
+      x-required-by-case: true
+      responses:
+        '200':
+          description: Успешный ответ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerPage'
+              examples:
+                Customers:
+                  $ref: '#/components/examples/Customers'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      parameters:
+      - name: page
+        in: query
+        required: false
+        description: Номер страницы.
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          default: 1
+      - name: pageSize
+        in: query
+        required: false
+        description: Размер страницы.
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: search
+        in: query
+        required: false
+        description: Поиск по email или точному ID.
+        schema:
+          type: string
+          maxLength: 256
+      - name: riskLevel
+        in: query
+        required: false
+        description: Фильтр уровней, например high,medium.
+        schema:
+          type: array
+          items:
+            $ref: '#/components/schemas/RiskLevel'
+        style: form
+        explode: false
+      - name: minScore
+        in: query
+        required: false
+        description: Минимальный score, включительно; исключает null.
+        schema:
+          type: number
+          minimum: 0
+          maximum: 100
+      - name: maxScore
+        in: query
+        required: false
+        description: Максимальный score, включительно; minScore <= maxScore.
+        schema:
+          type: number
+          minimum: 0
+          maximum: 100
+      - name: sortBy
+        in: query
+        required: false
+        description: Поле сортировки.
+        schema:
+          type: string
+          enum:
+          - id
+          - email
+          - balance
+          - totalReplenished
+          - score
+          - potentialLoss
+          default: score
+      - name: sortOrder
+        in: query
+        required: false
+        description: Направление сортировки.
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+  /api/v1/customers/{id}:
+    get:
+      operationId: getCustomer
+      tags:
+      - Customers
+      summary: Подробная оценка клиента
+      description: Показывает услуги, вклад признаков, причины score и денежную оценку. Уже удалённые и заблокированные
+        услуги можно показать в карточке, но нельзя считать будущими продлениями.
+      x-required-by-case: true
+      responses:
+        '200':
+          description: Успешный ответ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+              examples:
+                CustomerDetails:
+                  $ref: '#/components/examples/CustomerDetails'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: ID аккаунта источника.
+        schema:
+          $ref: '#/components/schemas/ID'
+  /api/v1/customers/{id}/transactions:
+    get:
+      operationId: listCustomerTransactions
+      tags:
+      - Customers
+      summary: Транзакции клиента
+      description: Дополнительная детализация для карточки. Выбираются транзакции услуг данного аккаунта. Это заказы
+        и продления, не полная история пополнений баланса.
+      x-required-by-case: false
+      responses:
+        '200':
+          description: Успешный ответ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: ID аккаунта источника.
+        schema:
+          $ref: '#/components/schemas/ID'
+      - name: page
+        in: query
+        required: false
+        description: Номер страницы.
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          default: 1
+      - name: pageSize
+        in: query
+        required: false
+        description: Размер страницы.
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: status
+        in: query
+        required: false
+        description: Статус транзакции.
+        schema:
+          type: string
+          enum:
+          - performed
+          - not_performed
+      - name: type
+        in: query
+        required: false
+        description: Тип транзакции.
+        schema:
+          type: string
+          enum:
+          - order
+          - prolong
+      - name: sortOrder
+        in: query
+        required: false
+        description: Сортировка по createdAt; при равенстве ID asc.
+        schema:
+          type: string
+          enum:
+          - asc
+          - desc
+          default: desc
+  /api/v1/analytics/summary:
+    get:
+      operationId: getAnalyticsSummary
+      tags:
+      - Analytics
+      summary: Сводка риска и денежных потерь
+      description: Агрегаты считаются по всем клиентам текущей версии, независимо от страницы рейтинга. Сумма customersByRisk
+        равна totalCustomers; unknown не входит в assessedCustomers. До первого снимка возвращаются нулевые счётчики,
+        loss.amountCents=null и calculation.version=0.
+      x-required-by-case: true
+      responses:
+        '200':
+          description: Успешный ответ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsSummary'
+              examples:
+                Summary:
+                  $ref: '#/components/examples/Summary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/analytics/churn:
+    get:
+      operationId: getChurnSeries
+      tags:
+      - Analytics
+      summary: Данные графика оттока
+      description: Дополнительный endpoint. Даты включительны, группировка по UTC-дням. from <= to; прогноз вне
+        горизонта и неизвестная история возвращаются null. Не восстанавливает даты удалений из текущего статуса
+        deleted.
+      x-required-by-case: false
+      responses:
+        '200':
+          description: Успешный ответ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChurnSeries'
+              examples:
+                Churn:
+                  $ref: '#/components/examples/Churn'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      parameters:
+      - name: from
+        in: query
+        required: true
+        description: Начало периода UTC.
+        schema:
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: true
+        description: Конец периода UTC.
+        schema:
+          type: string
+          format: date
+  /api/v1/model/settings:
+    get:
+      operationId: getModelSettings
+      tags:
+      - Model
+      summary: Текущие коэффициенты и параметры
+      description: Настройки и версия результата, к которому они применены.
+      x-required-by-case: true
+      responses:
+        '200':
+          description: Успешный ответ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelSettingsResponse'
+              examples:
+                Settings:
+                  $ref: '#/components/examples/Settings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    patch:
+      operationId: updateModelSettings
+      tags:
+      - Model
+      summary: Изменение коэффициентов с пересчётом
+      description: Атомарно проверяет и сохраняет изменения, пересчитывает результаты и публикует новую версию.
+        200 возвращается после готовности рейтинга, сводки и метрик. При ошибке предыдущие настройки и результаты
+        остаются действующими. Клиенты обновляют UI через polling либо /events.
+      x-required-by-case: true
+      responses:
+        '200':
+          description: Настройки сохранены, пересчёт завершён.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelSettingsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelSettingsPatch'
+            examples:
+              SettingsPatch:
+                $ref: '#/components/examples/SettingsPatch'
+  /api/v1/model/features:
+    get:
+      operationId: listModelFeatures
+      tags:
+      - Model
+      summary: Реестр признаков модели
+      description: 'Дополнительный endpoint для формы коэффициентов. Ключи не зашиты enum в settings: добавление
+        признака не требует изменения структуры OpenAPI.'
+      x-required-by-case: false
+      responses:
+        '200':
+          description: Успешный ответ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureRegistry'
+              examples:
+                Features:
+                  $ref: '#/components/examples/Features'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/source/snapshot:
+    put:
+      operationId: replaceSourceSnapshot
+      tags:
+      - Source
+      summary: Полная замена исходного снимка
+      description: Заменяет все аккаунты, услуги и транзакции атомарно, сохраняет снимок и пересчитывает анализ.
+        200 означает, что новая версия доступна в рейтинге, сводке и метриках. Синтаксическая ошибка — 400, ошибка
+        связей, дубль ID или некорректные значения — 422; старый снимок остаётся действующим. Подозрительный, но
+        представимый исходный статус (например старый prolong_wait) возвращается как warning и явно обрабатывается
+        моделью, а не переписывается молча.
+      x-required-by-case: true
+      responses:
+        '200':
+          description: Успешный ответ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResult'
+              examples:
+                Imported:
+                  $ref: '#/components/examples/Imported'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceSnapshot'
+            examples:
+              Snapshot:
+                $ref: '#/components/examples/Snapshot'
+  /api/v1/source/status:
+    get:
+      operationId: getSourceStatus
+      tags:
+      - Source
+      summary: Состояние последнего импорта
+      description: Дополнительный endpoint для UI. receivedAt — время приёма приложением; capturedAt — время источника,
+        если оно было передано. До первого импорта snapshotPresent=false.
+      x-required-by-case: false
+      responses:
+        '200':
+          description: Успешный ответ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/events:
+    get:
+      operationId: subscribeEvents
+      tags:
+      - Updates
+      summary: Уведомления об обновлении расчётов
+      description: 'Дополнительный SSE-поток: при подключении и после успешного пересчёта сообщает текущую версию.
+        Событие calculation.updated содержит JSON по схеме CalculationUpdatedEvent. После события клиент перечитывает
+        список, карточку и сводку, сравнивая версии. История событий не гарантируется: после переподключения всегда
+        отправляется текущая версия. Используйте fetch streaming или SSE-клиент с Authorization header; native EventSource
+        не позволяет задать этот заголовок. Токен не передаётся в URL. При истечении токена сервер закрывает поток;
+        клиент входит заново. Периодические комментарии heartbeat поддерживают соединение. Polling остаётся допустимой
+        альтернативой.'
+      x-required-by-case: false
+      responses:
+        '200':
+          description: Поток событий до разрыва соединения.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: no-cache
+            X-Accel-Buffering:
+              schema:
+                type: string
+              description: 'no'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: 'event: calculation.updated
+
+                id: 1
+
+                data: {"type":"calculation.updated","calculation":{"version":1,"sourceVersion":1,"modelVersion":1,"calculatedAt":"2026-10-23T18:00:00Z"},"changed":["source"]}
+
+
+                '
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /metrics:
+    get:
+      operationId: getMetrics
+      tags:
+      - Operations
+      summary: Метрики Prometheus
+      description: 'Обязательные gauges: число клиентов по уровням риска и оценка потерь. churn_potential_loss_eur
+        = summary.loss.amountCents / 100. При отсутствии денежной оценки значение NaN, а churn_loss_estimate_available=0;
+        отсутствие оценки не подменяется нулевым риском. churn_calculation_version согласован с calculation.version
+        API. В labels нет email или customer ID. Сборщик использует отдельный Bearer-токен METRICS_TOKEN; интерактивный
+        вход ему не нужен.'
+      x-required-by-case: true
+      responses:
+        '200':
+          description: Prometheus text exposition format.
+          content:
+            text/plain; version=0.0.4; charset=utf-8:
+              schema:
+                type: string
+              example: '# HELP churn_customers Number of customers by risk level.
+
+                # TYPE churn_customers gauge
+
+                churn_customers{risk_level="low"} 0
+
+                churn_customers{risk_level="medium"} 0
+
+                churn_customers{risk_level="high"} 1
+
+                churn_customers{risk_level="unknown"} 0
+
+                # HELP churn_potential_loss_eur Scenario estimate of renewal revenue at risk in EUR.
+
+                # TYPE churn_potential_loss_eur gauge
+
+                churn_potential_loss_eur 18.68
+
+                # HELP churn_loss_estimate_available Whether a loss estimate is available.
+
+                # TYPE churn_loss_estimate_available gauge
+
+                churn_loss_estimate_available 1
+
+                # HELP churn_calculation_version Published calculation version.
+
+                # TYPE churn_calculation_version gauge
+
+                churn_calculation_version 1
+
+                '
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      security:
+      - metricsBearer: []
+  /api/v1/docs:
+    get:
+      operationId: getSwaggerUI
+      tags:
+      - Documentation
+      summary: Рабочая Swagger UI
+      description: Обязательная HTML-страница Swagger UI, загружающая /api/v1/openapi.yaml. Authorize принимает
+        Bearer-токен из /auth/login; Try it out вызывает реальное API. Страница публична для входа через документацию,
+        клиентские данные и настройки защищены.
+      x-required-by-case: true
+      responses:
+        '200':
+          description: HTML-интерфейс Swagger UI.
+          content:
+            text/html:
+              schema:
+                type: string
+        '500':
+          $ref: '#/components/responses/InternalError'
+      security: []
+  /api/v1/openapi.yaml:
+    get:
+      operationId: getOpenAPISpec
+      tags:
+      - Documentation
+      summary: OpenAPI YAML
+      description: Дополнительный endpoint, отдающий этот контракт Swagger UI и клиентским генераторам.
+      x-required-by-case: false
+      responses:
+        '200':
+          description: Спецификация OpenAPI 3.0.3.
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '500':
+          $ref: '#/components/responses/InternalError'
+      security: []
+  /healthz:
+    get:
+      operationId: getLiveness
+      tags:
+      - Operations
+      summary: Проверка жизнеспособности
+      description: Дополнительная публичная probe без клиентских данных; не проверяет внешние зависимости.
+      x-required-by-case: false
+      responses:
+        '200':
+          description: Успешный ответ.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+      security: []
+  /readyz:
+    get:
+      operationId: getReadiness
+      tags:
+      - Operations
+      summary: Проверка готовности
+      description: Дополнительная публичная probe для Docker/Kubernetes. Не раскрывает адрес БД или секреты. 503,
+        если HTTP API ещё не готово либо БД недоступна.
+      x-required-by-case: false
+      responses:
+        '200':
+          description: API готово.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+        '503':
+          description: API не готово принимать рабочие запросы.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+      security: []
+components:
+  securitySchemes:
+    appBearer:
+      type: http
+      scheme: bearer
+      description: 'Токен сессии из /api/v1/auth/login либо проверенный OIDC access token. В заголовке Authorization:
+        Bearer <token>. В Swagger Authorize вводится только token.'
+    metricsBearer:
+      type: http
+      scheme: bearer
+      description: Отдельный токен сборщика METRICS_TOKEN, а не пользовательская сессия.
+  schemas:
+    ID:
+      type: integer
+      format: int64
+      minimum: 1
+      description: Положительный идентификатор источника.
+      example: 101
+    MoneyCents:
+      type: integer
+      format: int64
+      minimum: 0
+      description: 'Сумма в евроцентах: 100 = 1 EUR. Без дробной части.'
+      example: 2490
+    Timestamp:
+      type: string
+      description: Дата и время с часовым поясом; ответы в UTC.
+      format: date-time
+      example: '2026-10-23T18:00:00Z'
+    RiskLevel:
+      type: string
+      description: unknown означает отсутствие оценки, а не низкий риск.
+      enum:
+      - low
+      - medium
+      - high
+      - unknown
+    ServiceStatus:
+      type: string
+      description: suspended продолжает тарифицироваться. prolong_wait — ожидание оплаты до пяти дней после expiresAt.
+        deleted уже удалён, blocked нельзя продлить. Текущий статус не задаёт дату удаления.
+      enum:
+      - active
+      - suspended
+      - prolong_wait
+      - deleted
+      - blocked
+    PaymentTerm:
+      type: string
+      enum:
+      - hour
+      - week
+      - month
+      - quarter_year
+      - half_year
+      - year
+    User:
+      type: object
+      required:
+      - id
+      - username
+      - authProvider
+      properties:
+        id:
+          type: string
+          example: analyst
+        username:
+          type: string
+          example: analyst
+        authProvider:
+          type: string
+          enum:
+          - password
+          - oidc
+    LoginRequest:
+      type: object
+      required:
+      - username
+      - password
+      properties:
+        username:
+          type: string
+          minLength: 1
+          example: analyst
+        password:
+          type: string
+          minLength: 1
+          format: password
+          writeOnly: true
+      additionalProperties: false
+    LoginResponse:
+      type: object
+      required:
+      - accessToken
+      - tokenType
+      - expiresAt
+      - user
+      properties:
+        accessToken:
+          type: string
+          description: Токен сессии приложения. В Swagger Authorize вводится без префикса Bearer.
+          minLength: 1
+        tokenType:
+          type: string
+          enum:
+          - Bearer
+        expiresAt:
+          $ref: '#/components/schemas/Timestamp'
+        user:
+          $ref: '#/components/schemas/User'
+    AuthConfig:
+      type: object
+      required:
+      - passwordEnabled
+      - oidc
+      properties:
+        passwordEnabled:
+          type: boolean
+        oidc:
+          type: object
+          required:
+          - enabled
+          properties:
+            enabled:
+              type: boolean
+            issuer:
+              type: string
+              description: URL issuer из OIDC discovery.
+              format: uri
+            clientId:
+              type: string
+              description: Идентификатор публичного SPA-клиента; не client secret.
+            redirectUri:
+              type: string
+              format: uri
+            scopes:
+              type: array
+              items:
+                type: string
+              example:
+              - openid
+              - profile
+              - email
+          description: При enabled=true обязательны issuer, clientId, redirectUri и scopes.
+    Calculation:
+      type: object
+      required:
+      - version
+      - sourceVersion
+      - modelVersion
+      - calculatedAt
+      properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Версия опубликованного результата; растёт также при пересчёте по времени.
+        sourceVersion:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Версия сохранённого снимка; 0 до первого импорта.
+        modelVersion:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Версия сохранённых настроек модели.
+        calculatedAt:
+          type: string
+          description: null до первого расчёта.
+          format: date-time
+          nullable: true
+      description: Рейтинг, сводка и /metrics читают одну опубликованную версию. До первого импорта version=0, sourceVersion=0,
+        calculatedAt=null.
+    RiskReason:
+      type: object
+      required:
+      - code
+      - message
+      - featureKey
+      - serviceIds
+      properties:
+        code:
+          type: string
+          example: INSUFFICIENT_RENEWAL_FUNDS
+        message:
+          type: string
+          example: На ближайшее продление не хватает 2490 евроцентов.
+        featureKey:
+          type: string
+          example: insufficientRenewalFunds
+        serviceIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/ID'
+    RiskAssessment:
+      type: object
+      required:
+      - status
+      - score
+      - level
+      - reasons
+      properties:
+        status:
+          type: string
+          enum:
+          - assessed
+          - insufficient_data
+        score:
+          type: number
+          minimum: 0
+          maximum: 100
+          nullable: true
+          description: При insufficient_data равен null. Это индекс риска, не калиброванная вероятность.
+        level:
+          $ref: '#/components/schemas/RiskLevel'
+        reasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/RiskReason'
+      description: При недостатке данных status=insufficient_data, score=null, level=unknown; reasons объясняет,
+        каких данных не хватает. Для assessed нужны score и low/medium/high.
+    FeatureResult:
+      type: object
+      required:
+      - key
+      - applicable
+      - value
+      - coefficient
+      - contribution
+      - explanation
+      - serviceIds
+      properties:
+        key:
+          type: string
+        applicable:
+          type: boolean
+        value:
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+        coefficient:
+          type: number
+          minimum: 0
+        contribution:
+          type: number
+          minimum: 0
+          nullable: true
+          description: Вклад в score после нормировки применимых коэффициентов.
+        explanation:
+          type: string
+        serviceIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/ID'
+    LossEstimate:
+      type: object
+      required:
+      - amountCents
+      - currency
+      - horizonDays
+      - renewalRevenueCents
+      - unassessedRevenueCents
+      - isPartial
+      - explanation
+      properties:
+        amountCents:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: Округлённая сценарная оценка. null, если оценить риск невозможно.
+        currency:
+          type: string
+          enum:
+          - EUR
+        horizonDays:
+          type: integer
+          format: int64
+          minimum: 1
+        renewalRevenueCents:
+          $ref: '#/components/schemas/MoneyCents'
+        unassessedRevenueCents:
+          $ref: '#/components/schemas/MoneyCents'
+        isPartial:
+          type: boolean
+        explanation:
+          type: string
+      description: 'Выручка под риском: сумма стоимости ближайшей оплаты каждой подходящей услуги на горизонте,
+        умноженной на её score/100. Это сценарная оценка, не статистическое матожидание. Общий доступный баланс
+        аккаунта учитывается совместно при оценке обеспеченности продлений, не вычитается заново из каждой услуги.
+        withdrawBalance не расходуется автоматически; bonusBalance доступен только при unlocked. Блокированные и
+        удалённые услуги исключены из будущей выручки. Одна ближайшая оплата на услугу: это не вся периодическая
+        выручка за горизонт.'
+    Account:
+      type: object
+      required:
+      - id
+      - email
+      - balance
+      - withdrawBalance
+      - bonusBalance
+      - bonusState
+      - totalReplenished
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        email:
+          type: string
+          format: email
+        balance:
+          type: integer
+          format: int64
+          description: Основной баланс в евроцентах; отрицательное значение означает долг.
+        withdrawBalance:
+          $ref: '#/components/schemas/MoneyCents'
+        bonusBalance:
+          $ref: '#/components/schemas/MoneyCents'
+        bonusState:
+          type: string
+          enum:
+          - locked
+          - unlocked
+        totalReplenished:
+          $ref: '#/components/schemas/MoneyCents'
+    SourceService:
+      type: object
+      required:
+      - id
+      - ownerId
+      - name
+      - paymentTerm
+      - autoProlong
+      - createdAt
+      - expiresAt
+      - status
+      - price
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        ownerId:
+          $ref: '#/components/schemas/ID'
+        name:
+          type: string
+          minLength: 1
+        paymentTerm:
+          $ref: '#/components/schemas/PaymentTerm'
+        autoProlong:
+          type: boolean
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+        expiresAt:
+          $ref: '#/components/schemas/Timestamp'
+        status:
+          $ref: '#/components/schemas/ServiceStatus'
+        price:
+          $ref: '#/components/schemas/MoneyCents'
+      description: Нормализованный DTO услуги. autoProlong — флаг автопродления, price — стоимость одного периода.
+        expiresAt >= createdAt; название произвольное. Если источник использует другое написание поля автопродления,
+        его нормализует адаптер импорта.
+    SourceTransaction:
+      type: object
+      required:
+      - id
+      - serviceId
+      - amount
+      - status
+      - type
+      - createdAt
+      - performedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        serviceId:
+          $ref: '#/components/schemas/ID'
+        amount:
+          $ref: '#/components/schemas/MoneyCents'
+        status:
+          type: string
+          enum:
+          - performed
+          - not_performed
+        type:
+          type: string
+          enum:
+          - order
+          - prolong
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+        performedAt:
+          type: string
+          format: date-time
+          nullable: true
+      description: performed требует performedAt >= createdAt; для not_performed performedAt=null. Произвольного
+        ограничения суммы в 1000 евроцентов нет.
+    Customer:
+      allOf:
+      - $ref: '#/components/schemas/Account'
+      - type: object
+        required:
+        - servicesCount
+        - risk
+        - loss
+        properties:
+          servicesCount:
+            type: integer
+            format: int64
+            minimum: 0
+          risk:
+            $ref: '#/components/schemas/RiskAssessment'
+          loss:
+            $ref: '#/components/schemas/LossEstimate'
+    ServiceAssessment:
+      allOf:
+      - $ref: '#/components/schemas/SourceService'
+      - type: object
+        required:
+        - risk
+        - features
+        - loss
+        properties:
+          risk:
+            $ref: '#/components/schemas/RiskAssessment'
+          features:
+            type: array
+            items:
+              $ref: '#/components/schemas/FeatureResult'
+          loss:
+            $ref: '#/components/schemas/LossEstimate'
+    CustomerDetail:
+      allOf:
+      - $ref: '#/components/schemas/Customer'
+      - type: object
+        required:
+        - services
+        - features
+        properties:
+          services:
+            type: array
+            items:
+              $ref: '#/components/schemas/ServiceAssessment'
+          features:
+            type: array
+            items:
+              $ref: '#/components/schemas/FeatureResult'
+    Pagination:
+      type: object
+      required:
+      - page
+      - pageSize
+      - total
+      properties:
+        page:
+          type: integer
+          format: int64
+          minimum: 1
+        pageSize:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+    CustomerPage:
+      type: object
+      required:
+      - items
+      - pagination
+      - calculation
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Customer'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+        calculation:
+          $ref: '#/components/schemas/Calculation'
+    CustomerResponse:
+      type: object
+      required:
+      - customer
+      - calculation
+      properties:
+        customer:
+          $ref: '#/components/schemas/CustomerDetail'
+        calculation:
+          $ref: '#/components/schemas/Calculation'
+    RiskCounts:
+      type: object
+      required:
+      - low
+      - medium
+      - high
+      - unknown
+      properties:
+        low:
+          type: integer
+          format: int64
+          minimum: 0
+        medium:
+          type: integer
+          format: int64
+          minimum: 0
+        high:
+          type: integer
+          format: int64
+          minimum: 0
+        unknown:
+          type: integer
+          format: int64
+          minimum: 0
+    AnalyticsSummary:
+      type: object
+      required:
+      - totalCustomers
+      - assessedCustomers
+      - customersByRisk
+      - totalServices
+      - atRiskServices
+      - loss
+      - calculation
+      properties:
+        totalCustomers:
+          type: integer
+          format: int64
+          minimum: 0
+        assessedCustomers:
+          type: integer
+          format: int64
+          minimum: 0
+        customersByRisk:
+          $ref: '#/components/schemas/RiskCounts'
+        totalServices:
+          type: integer
+          format: int64
+          minimum: 0
+        atRiskServices:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Число услуг с medium/high; unknown не считается low.
+        loss:
+          $ref: '#/components/schemas/LossEstimate'
+        calculation:
+          $ref: '#/components/schemas/Calculation'
+    RiskThresholds:
+      type: object
+      required:
+      - mediumFrom
+      - highFrom
+      properties:
+        mediumFrom:
+          type: number
+          minimum: 0
+          maximum: 100
+        highFrom:
+          type: number
+          minimum: 0
+          maximum: 100
+      additionalProperties: false
+      description: 0 <= mediumFrom < highFrom <= 100. Ниже mediumFrom — low, от mediumFrom до highFrom — medium,
+        от highFrom — high.
+    Coefficients:
+      type: object
+      minProperties: 1
+      additionalProperties:
+        type: number
+        minimum: 0
+      description: Ключи из GET /model/features. Ноль отключает признак; хотя бы один коэффициент должен быть положительным.
+    ModelSettings:
+      type: object
+      required:
+      - version
+      - updatedAt
+      - coefficients
+      - thresholds
+      - horizonDays
+      - refreshIntervalSeconds
+      - scoreFormula
+      - lossFormula
+      properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        updatedAt:
+          $ref: '#/components/schemas/Timestamp'
+        coefficients:
+          $ref: '#/components/schemas/Coefficients'
+        thresholds:
+          $ref: '#/components/schemas/RiskThresholds'
+        horizonDays:
+          type: integer
+          format: int64
+          minimum: 1
+        refreshIntervalSeconds:
+          type: integer
+          format: int64
+          minimum: 1
+        scoreFormula:
+          type: string
+        lossFormula:
+          type: string
+      description: 'Настройки хранятся в БД и сохраняются после перезапуска. Базовая формула: 100 * sum(coefficient
+        * featureValue) / sum(coefficient) по применимым включённым признакам; при нулевом знаменателе оценки нет.'
+    ModelSettingsPatch:
+      type: object
+      properties:
+        expectedVersion:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Опциональная защита от изменения устаревшей версии; несовпадение даёт 409.
+        coefficients:
+          $ref: '#/components/schemas/Coefficients'
+        thresholds:
+          $ref: '#/components/schemas/RiskThresholds'
+        horizonDays:
+          type: integer
+          format: int64
+          minimum: 1
+        refreshIntervalSeconds:
+          type: integer
+          format: int64
+          minimum: 1
+      minProperties: 1
+      additionalProperties: false
+      description: Нужно изменить хотя бы одно поле, кроме expectedVersion. coefficients объединяется с текущим
+        словарём, отсутствующие ключи сохраняются. Если передан thresholds, нужны оба порога. Неизвестные признаки
+        и некорректные комбинации дают 422.
+    ModelSettingsResponse:
+      type: object
+      required:
+      - settings
+      - calculation
+      properties:
+        settings:
+          $ref: '#/components/schemas/ModelSettings'
+        calculation:
+          $ref: '#/components/schemas/Calculation'
+    FeatureDefinition:
+      type: object
+      required:
+      - key
+      - name
+      - description
+      - defaultCoefficient
+      - requiredFields
+      - missingDataPolicy
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        defaultCoefficient:
+          type: number
+          minimum: 0
+        requiredFields:
+          type: array
+          items:
+            type: string
+        missingDataPolicy:
+          type: string
+    FeatureRegistry:
+      type: object
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeatureDefinition'
+    SourceSnapshot:
+      type: object
+      required:
+      - accounts
+      - services
+      - transactions
+      properties:
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Account'
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceService'
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceTransaction'
+        capturedAt:
+          $ref: '#/components/schemas/Timestamp'
+      additionalProperties: false
+      description: 'Полный нормализованный снимок, не частичное обновление. capturedAt необязателен: исходный набор
+        может не содержать время снимка. Пустые массивы допустимы и очищают данные. ID уникальны внутри массивов;
+        ownerId и serviceId обязаны ссылаться на записи этого снимка. Удаление записи из снимка само по себе не
+        доказывает дату удаления услуги.'
+    SourceCounts:
+      type: object
+      required:
+      - accounts
+      - services
+      - transactions
+      properties:
+        accounts:
+          type: integer
+          format: int64
+          minimum: 0
+        services:
+          type: integer
+          format: int64
+          minimum: 0
+        transactions:
+          type: integer
+          format: int64
+          minimum: 0
+    ImportWarning:
+      type: object
+      required:
+      - code
+      - message
+      - path
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        path:
+          type: string
+    SnapshotResult:
+      type: object
+      required:
+      - counts
+      - warnings
+      - calculation
+      properties:
+        counts:
+          $ref: '#/components/schemas/SourceCounts'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImportWarning'
+        calculation:
+          $ref: '#/components/schemas/Calculation'
+    SourceStatus:
+      type: object
+      required:
+      - snapshotPresent
+      - counts
+      - receivedAt
+      - capturedAt
+      - calculation
+      properties:
+        snapshotPresent:
+          type: boolean
+        counts:
+          $ref: '#/components/schemas/SourceCounts'
+        receivedAt:
+          type: string
+          format: date-time
+          nullable: true
+        capturedAt:
+          type: string
+          format: date-time
+          nullable: true
+        calculation:
+          $ref: '#/components/schemas/Calculation'
+    TransactionPage:
+      type: object
+      required:
+      - items
+      - pagination
+      - calculation
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceTransaction'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+        calculation:
+          $ref: '#/components/schemas/Calculation'
+    ChurnPoint:
+      type: object
+      required:
+      - date
+      - observedDeletedServices
+      - forecastNonRenewals
+      - atRiskServices
+      properties:
+        date:
+          type: string
+          format: date
+        observedDeletedServices:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: Наблюдавшиеся переходы в deleted; null, если истории наблюдений нет. Дата наблюдения может
+            отличаться от реальной даты удаления.
+        forecastNonRenewals:
+          type: number
+          minimum: 0
+          nullable: true
+          description: 'Сценарное число ближайших непродлений: сумма score/100. null для дат вне горизонта или при
+            недостатке данных.'
+        atRiskServices:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+    ChurnSeries:
+      type: object
+      required:
+      - observedHistoryAvailable
+      - observedFrom
+      - points
+      - calculation
+      properties:
+        observedHistoryAvailable:
+          type: boolean
+        observedFrom:
+          type: string
+          format: date-time
+          nullable: true
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChurnPoint'
+        calculation:
+          $ref: '#/components/schemas/Calculation'
+      description: Факт наблюдения и прогноз хранятся раздельно. Из начального снимка нельзя восстановить историю
+        удалений; неизвестные значения возвращаются null, а не нулями.
+    CalculationUpdatedEvent:
+      type: object
+      required:
+      - type
+      - calculation
+      - changed
+      properties:
+        type:
+          type: string
+          enum:
+          - calculation.updated
+        calculation:
+          $ref: '#/components/schemas/Calculation'
+        changed:
+          type: array
+          items:
+            type: string
+            enum:
+            - source
+            - model
+            - time
+    Health:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+    Readiness:
+      type: object
+      required:
+      - status
+      - database
+      - snapshotLoaded
+      properties:
+        status:
+          type: string
+          enum:
+          - ready
+          - not_ready
+        database:
+          type: string
+          enum:
+          - up
+          - down
+        snapshotLoaded:
+          type: boolean
+      description: Отсутствие первого снимка не означает отказ приложения; проверяется готовность принимать запросы
+        и доступность БД.
+    FieldError:
+      type: object
+      required:
+      - path
+      - message
+      properties:
+        path:
+          type: string
+          example: services[0].ownerId
+        message:
+          type: string
+          example: Аккаунт с таким ID отсутствует в снимке.
+    ErrorResponse:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: object
+          required:
+          - code
+          - message
+          - requestId
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            message:
+              type: string
+            details:
+              type: array
+              items:
+                $ref: '#/components/schemas/FieldError'
+            requestId:
+              type: string
+  responses:
+    BadRequest:
+      description: Некорректный JSON, параметры запроса или сочетание параметров.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Токен отсутствует, истёк, отозван или не прошёл проверку.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Недостаточно прав для операции.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Клиент не найден.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: expectedVersion не совпадает с текущей версией настроек.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    PayloadTooLarge:
+      description: Снимок превышает настроенный на сервере лимит размера запроса.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Данные синтаксически корректны, но нарушают правила модели или связи снимка.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            ValidationFailure:
+              $ref: '#/components/examples/ValidationFailure'
+    TooManyRequests:
+      description: Слишком много попыток входа.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+      headers:
+        Retry-After:
+          description: Через сколько секунд повторить запрос.
+          schema:
+            type: integer
+            minimum: 1
+    InternalError:
+      description: Внутренняя ошибка; подробности доступны по requestId.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unavailable:
+      description: Приложение временно не может выполнить операцию, например недоступна БД.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  examples:
+    Login:
+      value:
+        username: analyst
+        password: example-password
+    Session:
+      value:
+        accessToken: example-session-token
+        tokenType: Bearer
+        expiresAt: '2026-10-24T18:00:00Z'
+        user:
+          id: analyst
+          username: analyst
+          authProvider: password
+    Customers:
+      value:
+        items:
+        - id: 101
+          email: customer@example.test
+          balance: 0
+          withdrawBalance: 1000
+          bonusBalance: 0
+          bonusState: locked
+          totalReplenished: 50000
+          servicesCount: 1
+          risk:
+            status: assessed
+            score: 75
+            level: high
+            reasons:
+            - code: AUTO_PROLONG_DISABLED
+              message: Услуга заканчивается через два дня, автопродление выключено.
+              featureKey: renewalWithoutAutoProlong
+              serviceIds:
+              - 501
+            - code: INSUFFICIENT_RENEWAL_FUNDS
+              message: Для ближайшего продления не хватает 2490 евроцентов.
+              featureKey: insufficientRenewalFunds
+              serviceIds:
+              - 501
+          loss:
+            amountCents: 1868
+            currency: EUR
+            horizonDays: 7
+            renewalRevenueCents: 2490
+            unassessedRevenueCents: 0
+            isPartial: false
+            explanation: Ближайшая оплата 2490 евроцентов × индекс риска 75/100; округление до целого. Баланс 0,
+              бонусы недоступны. Сценарная оценка, не калиброванная вероятность.
+        pagination:
+          page: 1
+          pageSize: 20
+          total: 1
+        calculation:
+          version: 1
+          sourceVersion: 1
+          modelVersion: 1
+          calculatedAt: '2026-10-23T18:00:00Z'
+    CustomerDetails:
+      value:
+        customer:
+          id: 101
+          email: customer@example.test
+          balance: 0
+          withdrawBalance: 1000
+          bonusBalance: 0
+          bonusState: locked
+          totalReplenished: 50000
+          servicesCount: 1
+          risk:
+            status: assessed
+            score: 75
+            level: high
+            reasons:
+            - code: AUTO_PROLONG_DISABLED
+              message: Услуга заканчивается через два дня, автопродление выключено.
+              featureKey: renewalWithoutAutoProlong
+              serviceIds:
+              - 501
+            - code: INSUFFICIENT_RENEWAL_FUNDS
+              message: Для ближайшего продления не хватает 2490 евроцентов.
+              featureKey: insufficientRenewalFunds
+              serviceIds:
+              - 501
+          loss:
+            amountCents: 1868
+            currency: EUR
+            horizonDays: 7
+            renewalRevenueCents: 2490
+            unassessedRevenueCents: 0
+            isPartial: false
+            explanation: Ближайшая оплата 2490 евроцентов × индекс риска 75/100; округление до целого. Баланс 0,
+              бонусы недоступны. Сценарная оценка, не калиброванная вероятность.
+          features:
+          - key: renewalWithoutAutoProlong
+            applicable: true
+            value: 1
+            coefficient: 0.4
+            contribution: 40
+            explanation: Ближайшее продление в пределах горизонта, автопродление выключено.
+            serviceIds:
+            - 501
+          - key: insufficientRenewalFunds
+            applicable: true
+            value: 1
+            coefficient: 0.35
+            contribution: 35
+            explanation: Доступный баланс равен нулю.
+            serviceIds:
+            - 501
+          - key: paymentWaiting
+            applicable: true
+            value: 0
+            coefficient: 0.25
+            contribution: 0
+            explanation: Услуга активна, ожидания оплаты нет.
+            serviceIds:
+            - 501
+          services:
+          - id: 501
+            ownerId: 101
+            name: Основной сервер
+            paymentTerm: month
+            autoProlong: false
+            createdAt: '2026-09-25T18:00:00Z'
+            expiresAt: '2026-10-25T18:00:00Z'
+            status: active
+            price: 2490
+            risk:
+              status: assessed
+              score: 75
+              level: high
+              reasons:
+              - code: AUTO_PROLONG_DISABLED
+                message: Услуга заканчивается через два дня, автопродление выключено.
+                featureKey: renewalWithoutAutoProlong
+                serviceIds:
+                - 501
+              - code: INSUFFICIENT_RENEWAL_FUNDS
+                message: Для ближайшего продления не хватает 2490 евроцентов.
+                featureKey: insufficientRenewalFunds
+                serviceIds:
+                - 501
+            features:
+            - key: renewalWithoutAutoProlong
+              applicable: true
+              value: 1
+              coefficient: 0.4
+              contribution: 40
+              explanation: Ближайшее продление в пределах горизонта, автопродление выключено.
+              serviceIds:
+              - 501
+            - key: insufficientRenewalFunds
+              applicable: true
+              value: 1
+              coefficient: 0.35
+              contribution: 35
+              explanation: Доступный баланс равен нулю.
+              serviceIds:
+              - 501
+            - key: paymentWaiting
+              applicable: true
+              value: 0
+              coefficient: 0.25
+              contribution: 0
+              explanation: Услуга активна, ожидания оплаты нет.
+              serviceIds:
+              - 501
+            loss:
+              amountCents: 1868
+              currency: EUR
+              horizonDays: 7
+              renewalRevenueCents: 2490
+              unassessedRevenueCents: 0
+              isPartial: false
+              explanation: Ближайшая оплата 2490 евроцентов × индекс риска 75/100; округление до целого. Баланс
+                0, бонусы недоступны. Сценарная оценка, не калиброванная вероятность.
+        calculation:
+          version: 1
+          sourceVersion: 1
+          modelVersion: 1
+          calculatedAt: '2026-10-23T18:00:00Z'
+    Summary:
+      value:
+        totalCustomers: 1
+        assessedCustomers: 1
+        customersByRisk:
+          low: 0
+          medium: 0
+          high: 1
+          unknown: 0
+        totalServices: 1
+        atRiskServices: 1
+        loss:
+          amountCents: 1868
+          currency: EUR
+          horizonDays: 7
+          renewalRevenueCents: 2490
+          unassessedRevenueCents: 0
+          isPartial: false
+          explanation: Ближайшая оплата 2490 евроцентов × индекс риска 75/100; округление до целого. Баланс 0, бонусы
+            недоступны. Сценарная оценка, не калиброванная вероятность.
+        calculation:
+          version: 1
+          sourceVersion: 1
+          modelVersion: 1
+          calculatedAt: '2026-10-23T18:00:00Z'
+    Settings:
+      value:
+        settings:
+          version: 1
+          updatedAt: '2026-10-23T18:00:00Z'
+          coefficients:
+            renewalWithoutAutoProlong: 0.4
+            insufficientRenewalFunds: 0.35
+            paymentWaiting: 0.25
+          thresholds:
+            mediumFrom: 35
+            highFrom: 70
+          horizonDays: 7
+          refreshIntervalSeconds: 60
+          scoreFormula: 100 * sum(coefficient * applicableFeatureValue) / sum(applicableCoefficient)
+          lossFormula: round(sum(nextRenewalPriceCents * serviceScore / 100))
+        calculation:
+          version: 1
+          sourceVersion: 1
+          modelVersion: 1
+          calculatedAt: '2026-10-23T18:00:00Z'
+    SettingsPatch:
+      value:
+        expectedVersion: 1
+        coefficients:
+          paymentWaiting: 0.5
+    Snapshot:
+      value:
+        accounts:
+        - id: 101
+          email: customer@example.test
+          balance: 0
+          withdrawBalance: 1000
+          bonusBalance: 0
+          bonusState: locked
+          totalReplenished: 50000
+        services:
+        - id: 501
+          ownerId: 101
+          name: Основной сервер
+          paymentTerm: month
+          autoProlong: false
+          createdAt: '2026-09-25T18:00:00Z'
+          expiresAt: '2026-10-25T18:00:00Z'
+          status: active
+          price: 2490
+        transactions:
+        - id: 7001
+          serviceId: 501
+          amount: 2490
+          status: performed
+          type: order
+          createdAt: '2026-09-25T18:00:00Z'
+          performedAt: '2026-09-25T18:01:00Z'
+        capturedAt: '2026-10-23T18:00:00Z'
+    Imported:
+      value:
+        counts:
+          accounts: 1
+          services: 1
+          transactions: 1
+        warnings: []
+        calculation:
+          version: 1
+          sourceVersion: 1
+          modelVersion: 1
+          calculatedAt: '2026-10-23T18:00:00Z'
+    UnknownRisk:
+      value:
+        status: insufficient_data
+        score: null
+        level: unknown
+        reasons:
+        - code: NO_APPLICABLE_FEATURES
+          message: Недостаточно данных о продлеваемых услугах.
+          featureKey: renewalWithoutAutoProlong
+          serviceIds: []
+    Features:
+      value:
+        items:
+        - key: renewalWithoutAutoProlong
+          name: Близкое окончание без автопродления
+          description: Есть ближайшая оплата на горизонте прогноза при выключенном автопродлении.
+          defaultCoefficient: 0.4
+          requiredFields:
+          - services.expiresAt
+          - services.autoProlong
+          - services.status
+          missingDataPolicy: Признак неприменим, если нет данных об услугах.
+        - key: insufficientRenewalFunds
+          name: Недостаток средств
+          description: Совместная обеспеченность ближайших продлений доступным балансом аккаунта.
+          defaultCoefficient: 0.35
+          requiredFields:
+          - accounts.balance
+          - accounts.bonusBalance
+          - accounts.bonusState
+          - services.price
+          missingDataPolicy: Признак неприменим без баланса или стоимости ближайших продлений.
+        - key: paymentWaiting
+          name: Ожидание оплаты
+          description: Наличие prolong_wait; длительность ожидания и дефицит средств могут усиливать признак.
+          defaultCoefficient: 0.25
+          requiredFields:
+          - services.status
+          - services.expiresAt
+          missingDataPolicy: Признак неприменим без статуса услуги.
+    ValidationFailure:
+      value:
+        error:
+          code: VALIDATION_ERROR
+          message: Снимок не принят.
+          details:
+          - path: services[0].ownerId
+            message: Аккаунт отсутствует в accounts.
+          requestId: req-example-1
+    Churn:
+      value:
+        observedHistoryAvailable: false
+        observedFrom: null
+        points:
+        - date: '2026-10-22'
+          observedDeletedServices: null
+          forecastNonRenewals: null
+          atRiskServices: null
+        - date: '2026-10-25'
+          observedDeletedServices: null
+          forecastNonRenewals: 0.75
+          atRiskServices: 1
+        calculation:
+          version: 1
+          sourceVersion: 1
+          modelVersion: 1
+          calculatedAt: '2026-10-23T18:00:00Z'

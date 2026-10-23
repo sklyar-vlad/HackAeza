@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HackAeza API</title>
+  <script>
+    (() => {
+      let saved;
+      try { saved = localStorage.getItem("hackaeza-theme"); } catch (_) {}
+      const theme = saved;
+      document.documentElement.dataset.theme = theme === "dark" || theme === "light" ? theme : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    })();
+  </script>
+  <link rel="icon" href="./assets/favicon.svg">
+  <link rel="stylesheet" href="./theme.css">
+  <script defer src="./reference.js"></script>
+  <script defer src="./theme.js"></script>
+</head>
+<body>
+  <header class="brand-header" data-scalar-scroll-header>
+    <a class="brand" href="./" aria-label="Aéza — документация API"><img src="./assets/logo.svg" width="108" height="36" alt="Aéza"></a>
+    <span>Документация <small>Churn Risk API</small></span>
+    <nav aria-label="Документация">
+      <a href="./" aria-current="page"><svg class="aeza-icon" aria-hidden="true" focusable="false"><use href="./assets/icons.svg#bookmark"></use></svg>API Reference</a>
+      <a href="./swagger.html"><svg class="aeza-icon" aria-hidden="true" focusable="false"><use href="./assets/icons.svg#laptop-settings"></use></svg>Swagger</a>
+      <a href="./openapi.yaml" download><svg class="aeza-icon" aria-hidden="true" focusable="false"><use href="./assets/icons.svg#chevron-down"></use></svg>OpenAPI</a>
+    </nav>
+    <button id="theme-toggle" type="button" aria-pressed="false">Тёмная тема</button>
+  </header>
+  <p id="reference-status" class="loading" role="status">Загружаем документацию API…</p>
+  <main id="reference"></main>
+  <nav id="section-pager" class="section-pager" aria-label="Переход между разделами" hidden>
+    <button id="section-previous" type="button">Назад</button>
+    <button id="section-next" type="button">Следующий раздел</button>
+  </nav>
+</body>
+</html>

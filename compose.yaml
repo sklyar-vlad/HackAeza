@@ -1,0 +1,7 @@
+services:
+  swagger:
+    build:
+      context: .
+      dockerfile: swagger/Dockerfile
+    ports:
+      - "8080:8080"

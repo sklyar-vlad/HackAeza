@@ -1,0 +1,16 @@
+version: '3'
+
+tasks:
+  env:
+    cmds:
+      - test -e .env || cp .env.example .env
+
+  lint:
+    cmds:
+      - cd backend && golangci-lint run --config=../.golangci.yml ./...
+      - npm --prefix frontend run lint
+
+  fmt:
+    cmds:
+      - cd backend && golangci-lint fmt --config=../.golangci.yml ./...
+      - npm --prefix frontend run format

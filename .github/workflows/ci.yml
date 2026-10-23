@@ -7,7 +7,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   backend:
@@ -61,3 +61,51 @@ jobs:
           npm run typecheck
           npm run test:ci
           npm run build
+
+  deploy:
+    needs: [backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Deployment not ready
+        if: hashFiles('compose.yaml') == ''
+        run: echo '::notice::Deploy skipped until compose.yaml exists in the repository root.'
+
+      - name: Deploy to VPS
+        if: hashFiles('compose.yaml') != ''
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          : "${VPS_HOST:?Set VPS_HOST}" "${VPS_USER:?Set VPS_USER}"
+          : "${VPS_SSH_KEY:?Set VPS_SSH_KEY}" "${VPS_KNOWN_HOSTS:?Set VPS_KNOWN_HOSTS}"
+          umask 077
+          ssh_key="$RUNNER_TEMP/vps_key"
+          known_hosts="$RUNNER_TEMP/vps_known_hosts"
+          trap 'rm -f "$ssh_key" "$known_hosts"' EXIT
+          printf '%s\n' "$VPS_SSH_KEY" > "$ssh_key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$known_hosts"
+
+          ssh -i "$ssh_key" -p "$VPS_PORT" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts" \
+            "$VPS_USER@$VPS_HOST" "bash -se -- '$GITHUB_SHA'" <<'DEPLOY'
+          set -euo pipefail
+          cd /srv/HackAeza-dev
+          git diff --quiet
+          git diff --cached --quiet
+          git fetch origin main
+          git switch --detach "$1"
+          docker compose -p hackaeza config --quiet
+          docker compose -p hackaeza build
+          docker compose -p hackaeza up -d --no-build --wait --wait-timeout 120
+          DEPLOY

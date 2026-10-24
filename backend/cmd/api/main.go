@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+
 	"github.com/sklyar-vlad/HackAeza/backend/internal/analytics"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/auth"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/config"
@@ -22,7 +24,6 @@ import (
 	"github.com/sklyar-vlad/HackAeza/backend/internal/jobs"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/postgres"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/source"
-	"go.uber.org/zap"
 )
 
 func main() {

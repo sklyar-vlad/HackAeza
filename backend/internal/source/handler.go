@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -14,7 +15,10 @@ import (
 	"github.com/sklyar-vlad/HackAeza/backend/internal/jobs"
 )
 
-const MaxSnapshotBytes = 100 << 20
+const (
+	MaxSnapshotBytes = 1 << 30
+	snapshotTimeout  = 15 * time.Minute
+)
 
 type Handler struct {
 	service      *Service
@@ -40,12 +44,16 @@ func (h *Handler) importSnapshot(c *gin.Context) {
 		handler.BadRequest(c, []entity.FieldError{{Path: "Idempotency-Key", Message: "Ожидается один непустой ключ."}})
 		return
 	}
+	deadline := time.Now().Add(snapshotTimeout)
+	controller := http.NewResponseController(c.Writer)
+	_ = controller.SetReadDeadline(deadline)
+	_ = controller.SetWriteDeadline(deadline)
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, MaxSnapshotBytes)
 	payload, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		var limit *http.MaxBytesError
 		if errors.As(err, &limit) {
-			handler.Error(c, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "Размер снимка превышает 100 МиБ.")
+			handler.Error(c, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "Размер снимка превышает 1 ГиБ.")
 		} else {
 			handler.BadRequest(c, nil)
 		}

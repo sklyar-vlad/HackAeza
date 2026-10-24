@@ -1,5 +1,13 @@
 name: hackaeza
 
+x-backend-build: &backend-build
+  context: ..
+  dockerfile: infra/Dockerfile.backend
+
+x-database-env: &database-env
+  DATABASE_URL: postgres://hackaeza@postgres:5432/hackaeza?sslmode=disable
+  PGPASSWORD: ${POSTGRES_PASSWORD:?Run bash scripts/setup-env.sh first}
+
 services:
   frontend:
     build:
@@ -17,11 +25,16 @@ services:
     restart: unless-stopped
 
   backend:
-    build:
-      context: ..
-      dockerfile: infra/Dockerfile.backend
+    build: *backend-build
     environment:
+      <<: *database-env
       HTTP_PORT: ${HTTP_PORT:-8081}
+      AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-8h}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "${HTTP_PORT:-8081}:${HTTP_PORT:-8081}"
     restart: unless-stopped
@@ -30,6 +43,30 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+
+  migrate:
+    build: *backend-build
+    environment: *database-env
+    command: ["migrate", "up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: hackaeza
+      POSTGRES_USER: hackaeza
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run bash scripts/setup-env.sh first}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hackaeza -d hackaeza"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   swagger:
     build:
@@ -42,3 +79,6 @@ services:
         condition: service_healthy
     ports:
       - "8080:8080"
+
+volumes:
+  postgres_data:

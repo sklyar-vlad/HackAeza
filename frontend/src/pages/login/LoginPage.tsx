@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -28,6 +29,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const login = useLogin();
+  const queryClient = useQueryClient();
   const {
     register,
     handleSubmit,
@@ -41,6 +43,7 @@ export function LoginPage() {
       { data },
       {
         onSuccess: (res) => {
+          queryClient.clear();
           signIn(res.accessToken, res.user.username);
           navigate("/", { replace: true });
         },

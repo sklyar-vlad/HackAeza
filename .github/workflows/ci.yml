@@ -13,6 +13,18 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: hackaeza
+          POSTGRES_DB: hackaeza
+          POSTGRES_PASSWORD: auth-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hackaeza -d hackaeza"
+          --health-interval 5s --health-timeout 3s --health-retries 10
     steps:
       - uses: actions/checkout@v7
         with:
@@ -35,6 +47,9 @@ jobs:
       - name: Go tests
         if: ${{ !cancelled() && steps.go.outcome == 'success' }}
         working-directory: backend
+        env:
+          AUTH_TEST_DATABASE_URL: postgres://hackaeza@localhost:5432/hackaeza?sslmode=disable
+          PGPASSWORD: auth-ci-only
         run: go test -race -count=1 -timeout=5m ./...
 
   frontend:
@@ -105,13 +120,10 @@ jobs:
           git diff --cached --quiet
           git fetch origin main
           git switch --detach "$1"
-          if [ ! -f infra/.env ]; then
-            if [ -f .env ]; then
-              mv .env infra/.env
-            else
-              cp infra/.env.example infra/.env
-            fi
+          if [ ! -f infra/.env ] && [ -f .env ]; then
+            mv .env infra/.env
           fi
+          bash scripts/setup-env.sh
           docker compose --env-file infra/.env -f infra/compose.yaml -p hackaeza config --quiet
           docker compose --env-file infra/.env -f infra/compose.yaml -p hackaeza build
           docker compose --env-file infra/.env -f infra/compose.yaml -p hackaeza up -d --no-build --wait --wait-timeout 120

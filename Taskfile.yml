@@ -39,3 +39,36 @@ tasks:
     deps: [env]
     cmds:
       - docker compose --env-file infra/.env -f infra/compose.yaml stop swagger
+
+  migrate:up:
+    desc: Применить новые миграции Goose
+    deps: [env]
+    cmds:
+      - bash scripts/setup-env.sh
+      - docker compose --env-file infra/.env -f infra/compose.yaml up -d --wait postgres
+      - docker compose --env-file infra/.env -f infra/compose.yaml run --rm --build --no-deps -T migrate migrate up
+
+  migrate:down:
+    desc: Откатить одну миграцию Goose (первая удаляет пользователей и сессии)
+    deps: [env]
+    cmds:
+      - bash scripts/setup-env.sh
+      - docker compose --env-file infra/.env -f infra/compose.yaml stop frontend swagger backend
+      - docker compose --env-file infra/.env -f infra/compose.yaml up -d --wait postgres
+      - docker compose --env-file infra/.env -f infra/compose.yaml run --rm --build --no-deps -T migrate migrate down
+
+  migrate:status:
+    desc: Показать состояние миграций Goose
+    deps: [env]
+    cmds:
+      - bash scripts/setup-env.sh
+      - docker compose --env-file infra/.env -f infra/compose.yaml up -d --wait postgres
+      - docker compose --env-file infra/.env -f infra/compose.yaml run --rm --build --no-deps -T migrate migrate status
+
+  migrate:version:
+    desc: Показать версию схемы Goose
+    deps: [env]
+    cmds:
+      - bash scripts/setup-env.sh
+      - docker compose --env-file infra/.env -f infra/compose.yaml up -d --wait postgres
+      - docker compose --env-file infra/.env -f infra/compose.yaml run --rm --build --no-deps -T migrate migrate version

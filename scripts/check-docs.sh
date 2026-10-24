@@ -34,8 +34,8 @@ for origin in "${frontend_url%/}" "${docs_url%/}"; do
     check GET "$origin/api/v1/docs" 200 'swagger-ui-bundle.js'
     check GET "$origin/api/v1/openapi.yaml" 200 'openapi: 3.0.3'
     check GET "$origin/healthz" 200 '"status":"ok"'
-    # Missing API routes must reach Go and return its 404, never the React page.
-    check GET "$origin/api/v1/__docs_smoke_missing__?page=2" 404 '404 page not found'
-    check POST "$origin/api/v1/__docs_smoke_missing__" 404 '404 page not found'
+    # All business API paths require a session, including future/missing handlers.
+    check GET "$origin/api/v1/__docs_smoke_missing__?page=2" 401 'UNAUTHORIZED'
+    check POST "$origin/api/v1/__docs_smoke_missing__" 401 'UNAUTHORIZED'
 done
 printf '\nDocumentation HTTP checks passed. Also run the browser checks in README.md.\n'

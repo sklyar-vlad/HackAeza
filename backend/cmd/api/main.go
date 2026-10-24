@@ -16,7 +16,9 @@ import (
 	"github.com/sklyar-vlad/HackAeza/backend/internal/config"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/customers"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/handler"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/jobs"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/postgres"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/source"
 	"go.uber.org/zap"
 )
 
@@ -50,6 +52,8 @@ func run(logger *zap.Logger) error {
 	gin.SetMode(gin.ReleaseMode)
 	router := handler.NewRouter(logger, pool)
 	api := router.Group("/api/v1")
+	queue := jobs.NewRepository(pool)
+	source.NewHandler(source.NewService(source.NewRepository(pool, queue)), queue.SessionActor).Register(api)
 	customers.NewHandler(customers.NewService(customers.NewRepository(pool))).Register(api)
 	analytics.NewHandler(analytics.NewService(analytics.NewRepository(pool))).Register(api)
 

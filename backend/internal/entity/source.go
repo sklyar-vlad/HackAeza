@@ -73,11 +73,11 @@ const (
 type Transaction struct {
 	ID          ID                `json:"id"`
 	ServiceID   ID                `json:"serviceId"`
-	Amount      int32             `json:"amount"` 
+	Amount      int32             `json:"amount"`
 	Status      TransactionStatus `json:"status"`
 	Type        TransactionType   `json:"type"`
 	CreatedAt   SourceTimestamp   `json:"createdAt"`
-	PerformedAt *SourceTimestamp  `json:"performedAt"` 
+	PerformedAt *SourceTimestamp  `json:"performedAt"`
 }
 
 type SourceSnapshot struct {

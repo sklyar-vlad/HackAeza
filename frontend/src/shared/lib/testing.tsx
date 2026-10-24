@@ -19,9 +19,39 @@ afterEach(() => {
   useSession.setState({ token: null, username: null });
 });
 
-/** Replaces fetch with contract-shaped replies keyed by "METHOD /path"; unknown routes answer 404. */
+/** Replaces fetch and XHR with contract-shaped replies keyed by "METHOD /path"; unknown routes answer 404. */
 export function stubApi(routes: Routes) {
   const calls: Call[] = [];
+  const reply = (call: Call): Reply => {
+    calls.push(call);
+    const handler = routes[`${call.method} ${call.url.split("?")[0]}`];
+    return handler ? handler(call) : [404];
+  };
+  vi.stubGlobal(
+    "XMLHttpRequest",
+    class {
+      upload: { onprogress?: (e: ProgressEvent) => void } = {};
+      onload?: () => void;
+      responseType = "";
+      status = 0;
+      response: unknown = null;
+      private call = { headers: new Headers() } as Call;
+      open(method: string, url: string) {
+        Object.assign(this.call, { method, url });
+      }
+      setRequestHeader(name: string, value: string) {
+        this.call.headers.set(name, value);
+      }
+      getResponseHeader() {
+        return null;
+      }
+      send(body: Blob) {
+        this.call.body = body;
+        [this.status, this.response = null] = reply(this.call);
+        setTimeout(() => this.onload?.());
+      }
+    },
+  );
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string, init: RequestInit = {}) => {
@@ -31,9 +61,7 @@ export function stubApi(routes: Routes) {
         headers: new Headers(init.headers),
         body: typeof init.body === "string" ? JSON.parse(init.body) : init.body,
       };
-      calls.push(call);
-      const handler = routes[`${call.method} ${input.split("?")[0]}`];
-      const [status, body] = handler ? handler(call) : [404];
+      const [status, body] = reply(call);
       return new Response(body === undefined ? null : JSON.stringify(body), {
         status,
         headers: { "Content-Type": "application/json" },

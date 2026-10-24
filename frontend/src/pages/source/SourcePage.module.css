@@ -82,3 +82,46 @@
   flex: none;
   margin-top: 1px;
 }
+
+.drop[data-busy] {
+  cursor: default;
+  border-style: solid;
+  background: var(--sheet);
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 420px;
+  text-align: left;
+}
+
+.stage,
+.stats {
+  color: var(--mute);
+  font-size: 13px;
+}
+
+.percent {
+  font-size: 56px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.track {
+  height: 6px;
+  border-radius: 99px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--text);
+  transition: width 0.2s linear;
+}

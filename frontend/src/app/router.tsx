@@ -20,7 +20,15 @@ export const router = createBrowserRouter([
   },
   {
     element: <Protected />,
-    children: [],
+    children: [
+      {
+        index: true,
+        lazy: page(
+          () => import("@/pages/overview/OverviewPage"),
+          "OverviewPage",
+        ),
+      },
+    ],
   },
   { path: "*", element: <Navigate to="/" replace /> },
 ]);

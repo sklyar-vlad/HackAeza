@@ -30,7 +30,7 @@ for origin in "${frontend_url%/}" "${docs_url%/}"; do
     check GET "$origin$docs_path/" 200 'reference.js'
     check GET "$origin$docs_path/swagger.html" 200 'swagger-ui-bundle.js'
     check GET "$origin$docs_path/openapi.yaml" 200 'openapi: 3.0.3'
-    check GET "$origin$docs_path/metadata.json" 200 'getLiveness'
+    check GET "$origin$docs_path/spec.json" 200 'getLiveness'
     check GET "$origin/api/v1/docs" 200 'swagger-ui-bundle.js'
     check GET "$origin/api/v1/openapi.yaml" 200 'openapi: 3.0.3'
     check GET "$origin/healthz" 200 '"status":"ok"'

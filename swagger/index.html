@@ -1,78 +1,19 @@
 <!doctype html>
-<html lang="ru" data-theme="light">
+<html lang="ru">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Документация API HackAeza: клиенты, аналитика, модель риска и импорт данных."
+      content="Документация API риск-панели aéza: вход, клиенты, аналитика, модель риска и импорт данных."
     />
-    <title>Документация API — HackAeza</title>
-    <script>
-      try {
-        const p =
-          localStorage.getItem("hackaeza-docs-theme") ||
-          localStorage.getItem("hackaeza-aeza-preview-theme") ||
-          "system";
-        document.documentElement.dataset.theme =
-          p === "system"
-            ? matchMedia("(prefers-color-scheme:dark)").matches
-              ? "dark"
-              : "light"
-            : p === "dark"
-              ? "dark"
-              : "light";
-      } catch {
-        document.documentElement.dataset.theme = matchMedia(
-          "(prefers-color-scheme:dark)",
-        ).matches
-          ? "dark"
-          : "light";
-      }
-    </script>
-    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./tokens.css" />
-    <link rel="stylesheet" href="./theme.css" />
-    <script defer src="./theme.js"></script>
-    <script defer src="./reference.js"></script>
+    <title>Документация API // aéza</title>
+    <!-- head -->
+    <script type="module" src="./reference.js"></script>
   </head>
-  <body class="reference-page" data-view="reference">
-    <!-- page-content -->
-    <section id="docs-overview" class="docs-overview" hidden></section>
-    <div id="reference-content" hidden>
-      <div class="docs-notice">
-        <svg class="icon" aria-hidden="true">
-          <use href="./assets/icons.svg#info"></use>
-        </svg>
-        <p>
-          Нажмите <strong>Test Request / «Отправить запрос»</strong> у метода,
-          заполните параметры и отправьте запрос. Для защищённых методов укажите
-          Bearer-токен в авторизации. Запросы выполняются на реальном сервере.
-        </p>
-      </div>
-      <div class="reference-loading" id="reference-status" role="status">
-        <span class="loading-spinner" aria-hidden="true"></span>Загружаем
-        документацию API…
-      </div>
-      <div id="reference"></div>
-      <nav
-        class="section-pager"
-        id="section-pager"
-        aria-label="Переход между разделами"
-        hidden
-      >
-        <button class="button secondary" id="section-previous" type="button">
-          <svg class="icon" aria-hidden="true">
-            <use href="./assets/icons.svg#arrow-left"></use></svg
-          ><span>Назад</span></button
-        ><button class="button primary" id="section-next" type="button">
-          <span>Далее</span
-          ><svg class="icon" aria-hidden="true">
-            <use href="./assets/icons.svg#arrow-right"></use>
-          </svg>
-        </button>
-      </nav>
-    </div>
-    <!-- /page-content -->
+  <body data-view="reference">
+    <!-- shell -->
+    <div id="view"></div>
+    <!-- /shell -->
   </body>
 </html>

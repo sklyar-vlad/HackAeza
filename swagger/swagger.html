@@ -1,54 +1,31 @@
 <!doctype html>
-<html lang="ru" data-theme="light">
+<html lang="ru">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Интерактивная спецификация API HackAeza — Swagger UI."
+      content="Интерактивная спецификация API риск-панели aéza — Swagger UI."
     />
-    <title>Swagger UI — HackAeza</title>
-    <script>
-      try {
-        const p =
-          localStorage.getItem("hackaeza-docs-theme") ||
-          localStorage.getItem("hackaeza-aeza-preview-theme") ||
-          "system";
-        document.documentElement.dataset.theme =
-          p === "system"
-            ? matchMedia("(prefers-color-scheme:dark)").matches
-              ? "dark"
-              : "light"
-            : p === "dark"
-              ? "dark"
-              : "light";
-      } catch {
-        document.documentElement.dataset.theme = matchMedia(
-          "(prefers-color-scheme:dark)",
-        ).matches
-          ? "dark"
-          : "light";
-      }
-    </script>
-    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+    <title>Swagger UI // aéza</title>
     <link rel="stylesheet" href="./swagger-ui.css" />
-    <link rel="stylesheet" href="./tokens.css" />
-    <link rel="stylesheet" href="./theme.css" />
-    <script defer src="./theme.js"></script>
+    <!-- head -->
+    <link rel="stylesheet" href="./swagger.css" />
     <script defer src="./swagger-ui-bundle.js"></script>
+    <script type="module" src="./swagger.js"></script>
   </head>
-  <body class="swagger-page" data-view="swagger">
-    <!-- page-content -->
-    <div class="docs-notice">
-      <svg class="icon" aria-hidden="true">
-        <use href="./assets/icons.svg#info"></use>
-      </svg>
-      <p>
-        Для защищённых запросов используйте <strong>«Авторизоваться»</strong> и
-        Bearer-токен. Токен не сохраняется между сеансами документации.
-      </p>
+  <body data-view="swagger">
+    <!-- shell -->
+    <div class="stack tight rise">
+      <header>
+        <h1>swagger ui</h1>
+        <p class="lead">
+          Интерактивная спецификация. Токен из «Авторизоваться» не сохраняется
+          между сеансами.
+        </p>
+      </header>
+      <div id="swagger-ui"></div>
     </div>
-    <div id="swagger-ui"></div>
-    <!-- /page-content -->
+    <!-- /shell -->
   </body>
 </html>

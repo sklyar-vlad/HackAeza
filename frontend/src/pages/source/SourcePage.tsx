@@ -9,10 +9,11 @@ import {
   type SourceSnapshot,
 } from "@/shared/api/generated/api";
 import { ReplaceSourceSnapshotBody } from "@/shared/api/generated/zod";
-import { ApiError, http } from "@/shared/api/http";
+import { ApiError, upload, type UploadProgress } from "@/shared/api/http";
 import { bytes, date, dateOnly, int, time } from "@/shared/lib/format";
 import { Icon } from "@/shared/ui/Icon";
 import styles from "./SourcePage.module.css";
+import { UploadMeter } from "./UploadMeter";
 
 type Picked = {
   name: string;
@@ -57,19 +58,31 @@ export function SourcePage() {
   const { data: status } = useGetSourceStatus();
   const [picked, setPicked] = useState<Picked | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [sending, setSending] = useState<{
+    progress: UploadProgress;
+    startedAt: number;
+  } | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const { job, busy } = useJob(jobId ?? status?.pendingJobId);
 
-  const upload = useMutation({
-    mutationFn: (file: File) =>
-      http<JobAccepted>("/api/v1/source/snapshot", {
-        method: "PUT",
-        body: file,
-        headers: {
+  const send = useMutation({
+    mutationFn: (file: File) => {
+      setSending({
+        progress: { loaded: 0, total: file.size },
+        startedAt: Date.now(),
+      });
+      return upload<JobAccepted>(
+        "PUT",
+        "/api/v1/source/snapshot",
+        file,
+        {
           "Content-Type": "application/json",
           "Idempotency-Key": crypto.randomUUID(),
         },
-      }),
+        (progress) => setSending((s) => s && { ...s, progress }),
+      );
+    },
+    onSettled: () => setSending(null),
     onSuccess: (accepted) => setJobId(accepted.jobId),
     meta: { inlineError: true },
   });
@@ -79,9 +92,10 @@ export function SourcePage() {
       ? (job.result as SnapshotResult)
       : null;
   const counts = result?.counts ?? status?.counts;
-  const uploadError = upload.error instanceof ApiError ? upload.error : null;
+  const uploadError = send.error instanceof ApiError ? send.error : null;
   const pick = async (file: File | null | undefined) => {
-    upload.reset();
+    if (sending) return;
+    send.reset();
     if (file === null)
       return setPicked({
         name: "Файл не получен",
@@ -167,17 +181,28 @@ export function SourcePage() {
           </div>
         </div>
         <div className="grid" style={{ "--min": "300px" } as CSSProperties}>
-          <label className={styles.drop} data-dragging={dragging || undefined}>
-            <Icon name="upload" size={28} />
-            <span>
-              {picked
-                ? picked.name
-                : "Перетащите файл сюда или нажмите для выбора"}
-            </span>
-            <span className="muted">
-              {picked?.size ? bytes(picked.size) : "Формат .json"}
-            </span>
+          <label
+            className={styles.drop}
+            data-dragging={dragging || undefined}
+            data-busy={sending ? true : undefined}
+          >
+            {sending ? (
+              <UploadMeter {...sending} />
+            ) : (
+              <>
+                <Icon name="upload" size={28} />
+                <span>
+                  {picked
+                    ? picked.name
+                    : "Перетащите файл сюда или нажмите для выбора"}
+                </span>
+                <span className="muted">
+                  {picked?.size ? bytes(picked.size) : "Формат .json, до 1 ГБ"}
+                </span>
+              </>
+            )}
             <input
+              disabled={!!sending}
               type="file"
               accept=".json,application/json"
               className={styles.file}
@@ -216,10 +241,10 @@ export function SourcePage() {
             <button
               type="button"
               className="btn"
-              disabled={!picked?.file || busy || upload.isPending}
-              onClick={() => picked?.file && upload.mutate(picked.file)}
+              disabled={!picked?.file || busy || send.isPending}
+              onClick={() => picked?.file && send.mutate(picked.file)}
             >
-              {busy || upload.isPending
+              {busy || send.isPending
                 ? "Загружаем и пересчитываем…"
                 : "Загрузить и пересчитать"}
             </button>

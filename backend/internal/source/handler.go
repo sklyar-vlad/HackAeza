@@ -44,6 +44,10 @@ func (h *Handler) importSnapshot(c *gin.Context) {
 		handler.BadRequest(c, []entity.FieldError{{Path: "Idempotency-Key", Message: "Ожидается один непустой ключ."}})
 		return
 	}
+	if c.Request.ContentLength > MaxSnapshotBytes {
+		tooLarge(c)
+		return
+	}
 	deadline := time.Now().Add(snapshotTimeout)
 	controller := http.NewResponseController(c.Writer)
 	_ = controller.SetReadDeadline(deadline)
@@ -53,7 +57,7 @@ func (h *Handler) importSnapshot(c *gin.Context) {
 	if err != nil {
 		var limit *http.MaxBytesError
 		if errors.As(err, &limit) {
-			handler.Error(c, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "Размер снимка превышает 1 ГиБ.")
+			tooLarge(c)
 		} else {
 			handler.BadRequest(c, nil)
 		}
@@ -119,4 +123,8 @@ func respondError(c *gin.Context, err error) bool {
 		handler.Internal(c, err)
 	}
 	return true
+}
+
+func tooLarge(c *gin.Context) {
+	handler.Error(c, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "Размер снимка превышает 1 ГиБ.")
 }

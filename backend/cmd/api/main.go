@@ -20,8 +20,8 @@ import (
 	"github.com/sklyar-vlad/HackAeza/backend/internal/config"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/customers"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/handler"
-	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/migrations"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/jobs"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/migrations"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/postgres"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/source"
 )

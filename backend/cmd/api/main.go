@@ -2,14 +2,15 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
+
+	"github.com/sklyar-vlad/HackAeza/backend/internal/config"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/httpserver"
 )
 
 func main() {
@@ -20,10 +21,7 @@ func main() {
 }
 
 func run() error {
-	port := os.Getenv("HTTP_PORT")
-	if port == "" {
-		port = "8081"
-	}
+	cfg := config.NewConfig()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -37,28 +35,13 @@ func run() error {
 	})
 
 	server := &http.Server{
-		Addr:              net.JoinHostPort("", port),
+		Addr:              net.JoinHostPort("", cfg.Server.Port),
 		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       time.Minute,
+		ReadTimeout:       cfg.Server.ReadTimeout,
+		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
+		WriteTimeout:      cfg.Server.WriteTimeout,
+		IdleTimeout:       cfg.Server.IdleTimeout,
 	}
 
-	result := make(chan error, 1)
-	go func() {
-		result <- server.ListenAndServe()
-	}()
-	slog.Info("starting server", "addr", server.Addr)
-
-	select {
-	case err := <-result:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
-	case <-ctx.Done():
-		slog.Info("stopping server")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		return server.Shutdown(shutdownCtx)
-	}
+	return httpserver.Run(ctx, server, slog.Default(), cfg.Server.ShutdownTimeout)
 }

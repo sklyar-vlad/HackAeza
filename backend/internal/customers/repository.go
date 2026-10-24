@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/entity"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/redis"
 )
 
 var sortColumns = map[string]string{
@@ -27,11 +29,12 @@ const customerColumns = `a.id, a.email, a.balance, a.withdraw_balance, a.bonus_b
 	r.loss_amount_cents, r.renewal_revenue_cents, r.unassessed_revenue_cents, r.is_partial, r.loss_explanation`
 
 type Repository struct {
-	pool *pgxpool.Pool
+	pool  *pgxpool.Pool
+	cache *redis.Cache
 }
 
-func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{pool: pool}
+func NewRepository(pool *pgxpool.Pool, cache *redis.Cache) *Repository {
+	return &Repository{pool: pool, cache: cache}
 }
 
 func (r *Repository) Published(ctx context.Context) (entity.Calculation, int64, error) {
@@ -53,6 +56,20 @@ func (r *Repository) Published(ctx context.Context) (entity.Calculation, int64, 
 }
 
 func (r *Repository) List(ctx context.Context, calculation entity.Calculation, query Query) ([]entity.Customer, int64, error) {
+	query.RiskLevels = slices.Clone(query.RiskLevels)
+	slices.Sort(query.RiskLevels)
+	query.RiskLevels = slices.Compact(query.RiskLevels)
+	var cached struct {
+		Items []entity.Customer
+		Total int64
+	}
+	key := ""
+	if query.Page <= 5 {
+		key = redis.Key("customers", calculation.Version, query)
+	}
+	if r.cache.Get(ctx, key, &cached) {
+		return cached.Items, cached.Total, nil
+	}
 	where, args := customerFilter(calculation, query)
 	var total int64
 	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM customer_results r JOIN accounts a ON a.snapshot_version = r.source_version AND a.id = r.customer_id WHERE `+where, args...).Scan(&total); err != nil {
@@ -80,11 +97,17 @@ func (r *Repository) List(ctx context.Context, calculation entity.Calculation, q
 	if err != nil {
 		return nil, 0, fmt.Errorf("list customers: %w", err)
 	}
+	cached.Items, cached.Total = customers, total
+	r.cache.Set(ctx, key, cached)
 	return customers, total, nil
 }
 
 func (r *Repository) Get(ctx context.Context, calculation entity.Calculation, id entity.ID) (entity.CustomerDetail, error) {
 	var detail entity.CustomerDetail
+	key := redis.Key("customer", calculation.Version, id)
+	if r.cache.Get(ctx, key, &detail) {
+		return detail, nil
+	}
 	err := scanCustomer(r.pool.QueryRow(ctx, `
 		SELECT `+customerColumns+`, r.features
 		FROM customer_results r
@@ -119,6 +142,7 @@ func (r *Repository) Get(ctx context.Context, calculation entity.Calculation, id
 	if err != nil {
 		return entity.CustomerDetail{}, fmt.Errorf("read customer services: %w", err)
 	}
+	r.cache.Set(ctx, key, detail)
 	return detail, nil
 }
 

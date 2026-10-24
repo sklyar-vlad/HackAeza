@@ -18,6 +18,7 @@ import (
 	"github.com/sklyar-vlad/HackAeza/backend/internal/handler"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/jobs"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/postgres"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/redis"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/source"
 	"go.uber.org/zap"
 )
@@ -48,14 +49,19 @@ func run(logger *zap.Logger) error {
 		return err
 	}
 	defer pool.Close()
+	cache, err := redis.New(cfg.Redis)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = cache.Close() }()
 
 	gin.SetMode(gin.ReleaseMode)
 	router := handler.NewRouter(logger, pool)
 	api := router.Group("/api/v1")
 	queue := jobs.NewRepository(pool)
 	source.NewHandler(source.NewService(source.NewRepository(pool, queue)), queue.SessionActor).Register(api)
-	customers.NewHandler(customers.NewService(customers.NewRepository(pool))).Register(api)
-	analytics.NewHandler(analytics.NewService(analytics.NewRepository(pool))).Register(api)
+	customers.NewHandler(customers.NewService(customers.NewRepository(pool, cache))).Register(api)
+	analytics.NewHandler(analytics.NewService(analytics.NewRepository(pool, cache))).Register(api)
 
 	server := &http.Server{
 		Addr:              net.JoinHostPort("", cfg.Server.Port),

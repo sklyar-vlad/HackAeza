@@ -12,15 +12,21 @@ import (
 func NewRouter(logger *zap.Logger) *gin.Engine {
 	router := gin.New()
 	router.HandleMethodNotAllowed = true
-	router.Use(func(c *gin.Context) {
+	router.Use(RequestID, func(c *gin.Context) {
 		started := time.Now()
 		c.Next()
-		logger.Info("http request",
+		fields := []zap.Field{
 			zap.String("method", c.Request.Method),
 			zap.String("route", c.FullPath()),
 			zap.Int("status", c.Writer.Status()),
 			zap.Duration("duration", time.Since(started)),
-		)
+			zap.String("requestId", c.GetString(requestIDKey)),
+		}
+		if len(c.Errors) > 0 {
+			logger.Error("http request", append(fields, zap.String("error", c.Errors.String()))...)
+			return
+		}
+		logger.Info("http request", fields...)
 	}, gin.CustomRecoveryWithWriter(io.Discard, func(c *gin.Context, _ any) {
 		logger.Error("http panic recovered")
 		c.AbortWithStatus(http.StatusInternalServerError)

@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/analytics"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/config"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/customers"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/handler"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/postgres"
 	"go.uber.org/zap"
@@ -47,6 +49,9 @@ func run(logger *zap.Logger) error {
 
 	gin.SetMode(gin.ReleaseMode)
 	router := handler.NewRouter(logger)
+	api := router.Group("/api/v1")
+	customers.NewHandler(customers.NewService(customers.NewRepository(pool))).Register(api)
+	analytics.NewHandler(analytics.NewService(analytics.NewRepository(pool))).Register(api)
 
 	server := &http.Server{
 		Addr:              net.JoinHostPort("", cfg.Server.Port),

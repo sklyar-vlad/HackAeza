@@ -46,7 +46,7 @@ func run(logger *zap.Logger) error {
 	defer pool.Close()
 
 	gin.SetMode(gin.ReleaseMode)
-	router := handler.NewRouter(logger)
+	router := handler.NewRouter(logger, pool)
 
 	server := &http.Server{
 		Addr:              net.JoinHostPort("", cfg.Server.Port),

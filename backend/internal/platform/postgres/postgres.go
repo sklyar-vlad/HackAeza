@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/config"
 )
@@ -17,6 +20,11 @@ func New(ctx context.Context, cfg config.Database) (*pgxpool.Pool, error) {
 	settings.MaxConns = cfg.MaxConnections
 	settings.ConnConfig.ConnectTimeout = cfg.ConnectTimeout
 	settings.ConnConfig.RuntimeParams["timezone"] = "UTC"
+	settings.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
+		conn.TypeMap().RegisterType(&pgtype.Type{Name: "timestamptz", OID: pgtype.TimestamptzOID,
+			Codec: &pgtype.TimestamptzCodec{ScanLocation: time.UTC}})
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, cfg.ConnectTimeout)
 	defer cancel()
 	pool, err := pgxpool.NewWithConfig(ctx, settings)

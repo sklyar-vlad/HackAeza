@@ -4,7 +4,7 @@ tasks:
   backend:run:
     dir: backend
     cmds:
-      - go run .
+      - go run ./cmd/api
 
   env:
     cmds:

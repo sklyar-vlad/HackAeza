@@ -1,13 +1,16 @@
 openapi: 3.0.3
 info:
   title: HackAeza — анализатор рисков оттока
-  version: 1.0.0
-  description: Зафиксированный контракт API v1, согласованный с комплектом организаторов testdata/data.json,
+  version: 1.1.0
+  description: Проектируемый контракт API v1, согласованный с комплектом организаторов testdata/data.json,
     testdata/001_schema.up.sql и testdata/README.md. x-required-by-case=true отмечает 11 обязательных операций;
     остальные — расширения проекта, а не обещание реализованной функциональности. JSON-поля в camelCase, деньги
     в целых евроцентах. Исходные даты UTC с точностью до миллисекунд. score — эвристический индекс, не вероятность
     оттока; без оценки score=null и level=unknown. Вход по логину/паролю с Bearer-сессией; OIDC — дополнительный
-    режим без привязки к провайдеру. UI обновляется через polling; SSE — дополнительная возможность. Совместимые
+    режим без привязки к провайдеру. Редакция 1.1.0 по согласованию команды до реализации бизнес-API заменяет
+    синхронные ответы PATCH /model/settings и PUT /source/snapshot на 202 с jobId. Это несовместимое изменение
+    прежнего проектного контракта; клиенты должны опрашивать GET /jobs/{jobId} до публикации результата.
+    UI обновляется через polling; SSE — дополнительная возможность. После стабилизации контракта совместимые
     расширения v1 добавляют операции и необязательные поля; несовместимые изменения требуют новой major-версии.
     Наличие контракта не означает наличия HTTP-обработчиков.
 servers:
@@ -428,7 +431,9 @@ paths:
       tags:
       - Model
       summary: Текущие коэффициенты и параметры
-      description: Настройки и версия результата, к которому они применены.
+      description: Опубликованные настройки и версия результата, к которому они применены. Принятые, но ещё
+        не опубликованные изменения их не заменяют. pendingJobId позволяет восстановить наблюдение за заданием
+        после перезагрузки панели.
       x-required-by-case: true
       responses:
         '200':
@@ -450,18 +455,21 @@ paths:
       operationId: updateModelSettings
       tags:
       - Model
-      summary: Изменение коэффициентов с пересчётом
-      description: Атомарно проверяет и сохраняет изменения, пересчитывает результаты и публикует новую версию.
-        200 возвращается после готовности рейтинга, сводки и метрик. При ошибке предыдущие настройки и результаты
-        остаются действующими. Клиенты обновляют UI через polling либо /events.
+      summary: Изменение коэффициентов с фоновым пересчётом
+      description: Проверяет настройки и expectedVersion, затем атомарно сохраняет кандидат настроек и задание
+        в PostgreSQL. 202 возвращается только после COMMIT и означает приём задания, а не завершение пересчёта.
+        Опубликованные настройки, рейтинг, сводка и метрики остаются прежними до атомарной публикации новой версии.
+        Клиент опрашивает GET /api/v1/jobs/{jobId}; только succeeded означает, что новая версия опубликована.
+        При failed прежние настройки и результаты сохраняются. Для первой реализации одновременно допускается
+        одно queued/running задание изменения модели или полной замены снимка на весь набор данных; другое
+        изменение получает 409. Повтор с тем же Idempotency-Key обрабатывается до этой проверки и возвращает
+        первоначальный 202 с тем же jobId. Отключение клиента не отменяет принятое задание.
       x-required-by-case: true
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
       responses:
-        '200':
-          description: Настройки сохранены, пересчёт завершён.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ModelSettingsResponse'
+        '202':
+          $ref: '#/components/responses/JobAccepted'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -513,31 +521,34 @@ paths:
       operationId: replaceSourceSnapshot
       tags:
       - Source
-      summary: Полная замена исходного снимка
-      description: Заменяет все аккаунты, услуги и транзакции атомарно, сохраняет снимок и пересчитывает анализ.
-        200 означает, что новая версия доступна в рейтинге, сводке и метриках. Синтаксическая ошибка — 400,
-        ошибка связей, дубль ID или некорректные значения — 422; старый снимок остаётся действующим. Подозрительный,
-        но представимый исходный статус (например старый prolong_wait) возвращается как warning и явно обрабатывается
-        моделью, а не переписывается молча. Дополнительно проверяются уникальность email с учётом регистра,
+      summary: Полная замена снимка с фоновым пересчётом
+      description: Сохраняет полный снимок в промежуточном хранилище PostgreSQL и задание одной транзакцией.
+        202 возвращается только после COMMIT и означает приём задания. Worker проверяет данные и пересчитывает
+        анализ; только succeeded в GET /api/v1/jobs/{jobId} означает атомарную публикацию нового снимка, рейтинга,
+        сводки и метрик. До публикации или при failed прежний снимок и результаты остаются действующими.
+        Некорректный JSON даёт 400, превышение размера — 413. Ошибки, найденные при первичной проверке, дают 422;
+        ошибки связей, дублей и других ограничений, найденные Worker после 202, дают failed с error.code=VALIDATION_ERROR
+        и путями полей в error.details. Подозрительный, но представимый статус (например старый prolong_wait)
+        возвращается в result.warnings успешного задания, а не переписывается молча. Проверяются уникальность email с учётом регистра,
         amount 0..1000, неотрицательные денежные значения, шаблон имени услуги и миллисекундные UTC-даты. Ограничение
-        amount не распространяется на price или балансы.
+        amount не распространяется на price или балансы. Одновременно допускается одно queued/running задание
+        полной замены снимка или изменения модели на весь набор данных; другое изменение получает 409.
+        Повтор с тем же Idempotency-Key обрабатывается до этой проверки и возвращает первоначальный 202 с тем же
+        jobId. Отключение клиента не отменяет принятое задание. Это полный снимок, а не входящий поток событий.
       x-required-by-case: true
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
       responses:
-        '200':
-          description: Успешный ответ.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SnapshotResult'
-              examples:
-                Imported:
-                  $ref: '#/components/examples/Imported'
+        '202':
+          $ref: '#/components/responses/JobAccepted'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '413':
           $ref: '#/components/responses/PayloadTooLarge'
         '422':
@@ -561,8 +572,10 @@ paths:
       tags:
       - Source
       summary: Состояние последнего импорта
-      description: Дополнительный endpoint для UI. receivedAt — время приёма приложением; capturedAt — время
-        источника, если оно было передано. До первого импорта snapshotPresent=false.
+      description: Дополнительный endpoint для UI, описывающий последний опубликованный снимок. receivedAt — время
+        приёма этого снимка приложением; capturedAt — время источника, если оно было передано. При pendingJobId
+        клиент может восстановить наблюдение за ещё не опубликованным заданием. До первого успешного импорта
+        snapshotPresent=false; принятый 202 сам по себе не меняет counts или calculation.
       x-required-by-case: false
       responses:
         '200':
@@ -573,6 +586,70 @@ paths:
                 $ref: '#/components/schemas/SourceStatus'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/jobs/{jobId}:
+    get:
+      operationId: getCalculationJob
+      tags:
+      - Operations
+      summary: Состояние фонового задания
+      description: 'Требует авторизации и доступа к набору данных задания. Возвращает 200 для любого существующего
+        доступного задания, включая failed: ошибка выполнения находится в error, а не в HTTP-статусе этого GET.
+        Состояния: queued → running → succeeded либо failed. Восстановление после падения Worker допускает
+        running → queued с последующим увеличением attempt; progress относится к текущей попытке и может
+        сброситься. Worker использует срок владения заданием, повторное выполнение и защиту публикации от
+        устаревшей попытки; повтор не должен повторно применять результаты. succeeded и result сохраняются
+        одной транзакцией с публикацией версии. При failed опубликованные данные не заменяются. Задания сохраняются
+        в PostgreSQL при перезапуске. Завершённые задания доступны не менее 24 часов после finishedAt; неизвестный,
+        недоступный или уже удалённый по сроку хранения jobId даёт 404. Retry-After задаёт интервал опроса queued/running,
+        клиент прекращает опрос после succeeded/failed. Рекомендуется опрашивать только активное задание с паузой
+        не менее Retry-After; при сетевой ошибке увеличивать интервал. Статус задания не кешируется.'
+      x-required-by-case: false
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/JobId'
+      responses:
+        '200':
+          description: Состояние задания; succeeded означает завершённую публикацию.
+          headers:
+            Cache-Control:
+              description: Всегда no-store.
+              schema:
+                type: string
+                enum: [no-store]
+            Retry-After:
+              description: Число секунд до следующего опроса; присутствует для queued/running.
+              schema:
+                type: integer
+                minimum: 1
+                example: 2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculationJob'
+              examples:
+                Queued:
+                  $ref: '#/components/examples/JobQueued'
+                Running:
+                  $ref: '#/components/examples/JobRunning'
+                ModelPublished:
+                  $ref: '#/components/examples/ModelJobSucceeded'
+                SnapshotPublished:
+                  $ref: '#/components/examples/SnapshotJobSucceeded'
+                Failed:
+                  $ref: '#/components/examples/JobFailed'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
         '503':
@@ -769,7 +846,125 @@ components:
       type: http
       scheme: bearer
       description: Отдельный токен сборщика METRICS_TOKEN, а не пользовательская сессия.
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: 'Рекомендуется для PATCH settings и PUT snapshot. Ключ уникален в области авторизованного
+        пользователя и набора данных. Повтор того же метода, пути и содержимого запроса с этим ключом возвращает
+        первоначальный 202 с тем же jobId и не создаёт новое задание, даже если оно уже завершено. Другое содержимое,
+        метод или путь с тем же ключом дают 409. Запись ключа, кандидата и задания атомарна; ключ хранится не менее
+        24 часов после приёма и до завершения задания, если оно длится дольше. После истечения срока ключ может
+        создать новое задание. Клиент создаёт новый ключ для нового действия и повторяет прежний при потере ответа.'
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: ^[A-Za-z0-9._:-]+$
+      example: model-settings-20261024-001
   schemas:
+    JobId:
+      type: string
+      format: uuid
+      description: Непредсказуемый идентификатор задания; не заменяет проверку доступа.
+      example: 8f24ad45-14ab-4df6-909b-8b5c6767b18e
+    JobStatus:
+      type: string
+      enum: [queued, running, succeeded, failed]
+    JobAccepted:
+      type: object
+      required: [jobId, statusUrl, createdAt, calculation]
+      properties:
+        jobId:
+          $ref: '#/components/schemas/JobId'
+        statusUrl:
+          type: string
+          description: Относительный URL состояния задания на том же origin. Токен в URL не передаётся.
+          pattern: ^/api/v1/jobs/[0-9a-fA-F-]+$
+          example: /api/v1/jobs/8f24ad45-14ab-4df6-909b-8b5c6767b18e
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+        calculation:
+          $ref: '#/components/schemas/Calculation'
+      description: Задание надёжно принято. calculation описывает опубликованную версию на момент приёма,
+        а не результат задания. При повторе с Idempotency-Key возвращается исходное представление; актуальное
+        состояние всегда читается через statusUrl.
+    JobProgress:
+      type: object
+      required: [processedCustomers, totalCustomers]
+      properties:
+        processedCustomers:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Обработано клиентов в текущей попытке. Не означает публикацию результатов.
+        totalCustomers:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Число клиентов в согласованном наборе текущей попытки; processedCustomers не больше totalCustomers.
+      description: Появляется после подготовки набора клиентов. Не выдаётся фиктивный процент до определения объёма.
+    JobError:
+      type: object
+      required: [code, message, requestId]
+      properties:
+        code:
+          type: string
+          example: CALCULATION_FAILED
+        message:
+          type: string
+          description: Безопасное человекочитаемое объяснение ошибки, без секретов и стека вызовов.
+        requestId:
+          type: string
+          description: Идентификатор для поиска подробностей в логах.
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldError'
+    CalculationJob:
+      type: object
+      required: [jobId, kind, status, createdAt, startedAt, finishedAt, attempt]
+      properties:
+        jobId:
+          $ref: '#/components/schemas/JobId'
+        kind:
+          type: string
+          enum: [model_settings, source_snapshot]
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Начало текущей попытки; null до запуска и после возврата в очередь.
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: null до терминального состояния succeeded/failed.
+        attempt:
+          type: integer
+          minimum: 0
+          description: 0 до первой попытки; увеличивается при каждом захвате задания Worker.
+        progress:
+          $ref: '#/components/schemas/JobProgress'
+        result:
+          oneOf:
+          - $ref: '#/components/schemas/ModelSettingsResponse'
+          - $ref: '#/components/schemas/SnapshotResult'
+          description: Только для succeeded. При kind=model_settings содержит ModelSettingsResponse,
+            при kind=source_snapshot — SnapshotResult. Версия в result — результат этого задания, она может
+            быть уже не самой новой при последующих обновлениях.
+        error:
+          $ref: '#/components/schemas/JobError'
+      description: Для queued/running result и error отсутствуют, finishedAt=null. Для succeeded обязателен
+        result и отсутствует error; для failed обязателен error и отсутствует result. В обоих терминальных
+        состояниях finishedAt задан. Для running startedAt задан и attempt>=1. Восстановление после падения
+        Worker не меняет jobId. Обработка имеет семантику повторных попыток, а публикация — защиту от дублей
+        и устаревшего владельца. Исчерпание ограниченного числа повторов завершает задание как failed.
     ID:
       type: integer
       format: int64
@@ -1439,6 +1634,12 @@ components:
           $ref: '#/components/schemas/ModelSettings'
         calculation:
           $ref: '#/components/schemas/Calculation'
+        pendingJobId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Текущее queued/running задание изменения модели или полной замены снимка этого набора;
+            null при его отсутствии. Поле опционально, но реализация асинхронного режима должна его возвращать.
     FeatureDefinition:
       type: object
       required:
@@ -1571,6 +1772,12 @@ components:
           nullable: true
         calculation:
           $ref: '#/components/schemas/Calculation'
+        pendingJobId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Текущее queued/running задание изменения модели или полной замены снимка этого набора;
+            null при его отсутствии. Поле опционально, но реализация асинхронного режима должна его возвращать.
     TransactionPage:
       type: object
       required:
@@ -1730,6 +1937,33 @@ components:
       description: 'Дата исходного комплекта: UTC, ровно три знака миллисекунд, суффикс Z; PostgreSQL timestamptz(3).'
       example: '2026-10-19T15:00:00.000Z'
   responses:
+    JobAccepted:
+      description: Кандидат изменения и задание сохранены в PostgreSQL. Это не подтверждение успешной проверки
+        всего снимка или публикации результатов; клиент должен читать statusUrl до succeeded/failed.
+      headers:
+        Location:
+          description: Тот же относительный URL, что statusUrl в теле ответа.
+          schema:
+            type: string
+            example: /api/v1/jobs/8f24ad45-14ab-4df6-909b-8b5c6767b18e
+        Retry-After:
+          description: Число секунд до первого опроса задания.
+          schema:
+            type: integer
+            minimum: 1
+            example: 2
+        Cache-Control:
+          description: Всегда no-store.
+          schema:
+            type: string
+            enum: [no-store]
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/JobAccepted'
+          examples:
+            Accepted:
+              $ref: '#/components/examples/JobAccepted'
     BadRequest:
       description: Некорректный JSON, параметры запроса или сочетание параметров.
       content:
@@ -1749,13 +1983,15 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     NotFound:
-      description: Клиент не найден.
+      description: Запрошенный ресурс не найден или недоступен текущему пользователю.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     Conflict:
-      description: expectedVersion не совпадает с текущей версией настроек.
+      description: expectedVersion не совпадает с опубликованной версией настроек, другое глобальное задание
+        уже queued/running либо Idempotency-Key повторно использован для другого запроса. error.code различает
+        VERSION_CONFLICT, JOB_IN_PROGRESS и IDEMPOTENCY_CONFLICT.
       content:
         application/json:
           schema:
@@ -1800,6 +2036,108 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   examples:
+    JobAccepted:
+      value:
+        jobId: 8f24ad45-14ab-4df6-909b-8b5c6767b18e
+        statusUrl: /api/v1/jobs/8f24ad45-14ab-4df6-909b-8b5c6767b18e
+        createdAt: '2026-10-24T16:00:00.000Z'
+        calculation:
+          version: 1
+          sourceVersion: 1
+          modelVersion: 1
+          calculatedAt: '2026-10-23T18:00:00Z'
+    JobQueued:
+      value:
+        jobId: 8f24ad45-14ab-4df6-909b-8b5c6767b18e
+        kind: model_settings
+        status: queued
+        createdAt: '2026-10-24T16:00:00.000Z'
+        startedAt: null
+        finishedAt: null
+        attempt: 0
+    JobRunning:
+      value:
+        jobId: 8f24ad45-14ab-4df6-909b-8b5c6767b18e
+        kind: model_settings
+        status: running
+        createdAt: '2026-10-24T16:00:00.000Z'
+        startedAt: '2026-10-24T16:00:01.000Z'
+        finishedAt: null
+        attempt: 1
+        progress:
+          processedCustomers: 45000
+          totalCustomers: 100000
+    ModelJobSucceeded:
+      value:
+        jobId: 8f24ad45-14ab-4df6-909b-8b5c6767b18e
+        kind: model_settings
+        status: succeeded
+        createdAt: '2026-10-24T16:00:00.000Z'
+        startedAt: '2026-10-24T16:00:01.000Z'
+        finishedAt: '2026-10-24T16:00:30.000Z'
+        attempt: 1
+        progress:
+          processedCustomers: 100000
+          totalCustomers: 100000
+        result:
+          settings:
+            version: 2
+            updatedAt: '2026-10-24T16:00:30.000Z'
+            coefficients:
+              renewalWithoutAutoProlong: 0.4
+              insufficientRenewalFunds: 0.35
+              paymentWaiting: 0.5
+            thresholds:
+              mediumFrom: 35
+              highFrom: 70
+            horizonDays: 7
+            refreshIntervalSeconds: 60
+            scoreFormula: 100 * sum(coefficient * applicableFeatureValue) / sum(applicableCoefficient)
+            lossFormula: round(sum(nextRenewalPriceCents * serviceScore / 100))
+          calculation:
+            version: 2
+            sourceVersion: 1
+            modelVersion: 2
+            calculatedAt: '2026-10-24T16:00:30.000Z'
+    SnapshotJobSucceeded:
+      value:
+        jobId: de02816b-2190-4240-a730-1b668c8d4c07
+        kind: source_snapshot
+        status: succeeded
+        createdAt: '2026-10-24T16:00:00.000Z'
+        startedAt: '2026-10-24T16:00:01.000Z'
+        finishedAt: '2026-10-24T16:00:30.000Z'
+        attempt: 1
+        progress:
+          processedCustomers: 1
+          totalCustomers: 1
+        result:
+          counts:
+            accounts: 1
+            services: 1
+            transactions: 1
+          warnings: []
+          calculation:
+            version: 2
+            sourceVersion: 2
+            modelVersion: 1
+            calculatedAt: '2026-10-24T16:00:30.000Z'
+    JobFailed:
+      value:
+        jobId: cb0d24ac-6099-4d3c-b43c-e385edc8e622
+        kind: source_snapshot
+        status: failed
+        createdAt: '2026-10-24T16:00:00.000Z'
+        startedAt: '2026-10-24T16:00:01.000Z'
+        finishedAt: '2026-10-24T16:00:03.000Z'
+        attempt: 1
+        error:
+          code: VALIDATION_ERROR
+          message: 'Снимок не опубликован: обнаружены некорректные связи. Предыдущие данные сохранены.'
+          requestId: req-import-20261024-001
+          details:
+          - path: services[0].ownerId
+            message: Аккаунт с таким ID отсутствует в снимке.
     Login:
       value:
         username: analyst

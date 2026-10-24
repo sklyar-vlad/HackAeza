@@ -38,9 +38,8 @@ Dev-сервер проксирует запросы так же, как `nginx.
 
 Backend поддерживает вход, `/auth/me`, выход и `/auth/config`. Перед открытием
 панели `app/Protected.tsx` проверяет сохранённую сессию на сервере. Первого
-сотрудника создают командой `/server user --username analyst` в контейнере backend;
-точные команды запуска и проверки приведены в корневом README. Остальные
-бизнес-методы backend пока не реализованы.
+сотрудника создают командой `docker compose --env-file infra/.env -f infra/compose.yaml exec backend /server user --username analyst`
+из корня репозитория. Бизнес-маршруты обслуживает Gin; доступ к API требует действующей сессии.
 
 ## Структура
 

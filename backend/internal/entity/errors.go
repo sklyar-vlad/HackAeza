@@ -2,8 +2,6 @@ package entity
 
 import "errors"
 
-// Adapters wrap these errors; services and handlers inspect them with errors.Is.
-// HTTP statuses and response formatting belong to handlers.
 var (
 	ErrNotFound            = errors.New("resource not found or inaccessible")
 	ErrVersionConflict     = errors.New("published version changed")

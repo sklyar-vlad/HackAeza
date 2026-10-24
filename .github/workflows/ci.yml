@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: hackaeza
           POSTGRES_DB: hackaeza
@@ -120,10 +120,13 @@ jobs:
           git diff --cached --quiet
           git fetch origin main
           git switch --detach "$1"
-          if [ ! -f infra/.env ] && [ -f .env ]; then
-            mv .env infra/.env
+          if [ ! -f infra/.env ]; then
+            if [ -f .env ]; then
+              mv .env infra/.env
+            else
+              cp infra/.env.example infra/.env
+            fi
           fi
-          bash scripts/setup-env.sh
           docker compose --env-file infra/.env -f infra/compose.yaml -p hackaeza config --quiet
           docker compose --env-file infra/.env -f infra/compose.yaml -p hackaeza build
           docker compose --env-file infra/.env -f infra/compose.yaml -p hackaeza up -d --no-build --wait --wait-timeout 120

@@ -1,11 +1,9 @@
-// Package entity contains shared data contracts, with no infrastructure dependencies.
 package entity
 
 import "time"
 
 type ID int64
 
-// MoneyCents is an integer amount in eurocents. Validation enforces nonnegative values.
 type MoneyCents int64
 
 type BonusState string
@@ -46,7 +44,6 @@ const (
 	PaymentYear        PaymentTerm = "year"
 )
 
-// Service corresponds to SourceService in OpenAPI. Status does not imply a deletion date.
 type Service struct {
 	ID          ID              `json:"id"`
 	OwnerID     ID              `json:"ownerId"`
@@ -73,19 +70,16 @@ const (
 	TransactionProlong TransactionType = "prolong"
 )
 
-// Transaction corresponds to SourceTransaction, not a balance replenishment.
 type Transaction struct {
 	ID          ID                `json:"id"`
 	ServiceID   ID                `json:"serviceId"`
-	Amount      int32             `json:"amount"` // Eurocents, 0..1000 in the source contract.
+	Amount      int32             `json:"amount"`
 	Status      TransactionStatus `json:"status"`
 	Type        TransactionType   `json:"type"`
 	CreatedAt   SourceTimestamp   `json:"createdAt"`
-	PerformedAt *SourceTimestamp  `json:"performedAt"` // Required JSON null for not_performed.
+	PerformedAt *SourceTimestamp  `json:"performedAt"`
 }
 
-// SourceSnapshot is a full replacement. All three arrays must be present, including when empty.
-// Required fields, ranges and relationships are validated by the source module, not by these structs.
 type SourceSnapshot struct {
 	Accounts     []Account     `json:"accounts"`
 	Services     []Service     `json:"services"`

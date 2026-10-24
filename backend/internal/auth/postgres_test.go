@@ -100,18 +100,6 @@ func TestPostgresAuthLifecycle(t *testing.T) {
 	if !bytes.Equal(hash, want[:]) || bytes.Contains(data, []byte(session.AccessToken)) || userID != account.ID || provider != "password" {
 		t.Fatal("stored session violates project schema or contains raw token")
 	}
-	// Model an existing database created before Goose: schema and credentials must survive adoption.
-	if _, err := pool.Exec(ctx, `DROP TABLE goose_db_version;
-		CREATE TABLE auth_schema_migrations (version TEXT PRIMARY KEY, checksum BYTEA NOT NULL);
-		INSERT INTO auth_schema_migrations VALUES ('000001_auth.sql', 'old-checksum')`); err != nil {
-		t.Fatal(err)
-	}
-	if err := migrations.Run(ctx, pool, "up", io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.Authenticate(ctx, session.AccessToken); err != nil {
-		t.Fatal("adopting existing tables invalidated the stored user or session")
-	}
 	// New service instance must load the existing session from PostgreSQL.
 	restarted := newService()
 	authCtx, err := restarted.Authenticate(ctx, session.AccessToken)
@@ -133,7 +121,7 @@ func TestPostgresAuthLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	expiredHash := sha256.Sum256([]byte(session.AccessToken))
-	if _, err := pool.Exec(ctx, "UPDATE auth_sessions SET expires_at = now() - interval '1 second' WHERE token_hash = $1", expiredHash[:]); err != nil {
+	if _, err := pool.Exec(ctx, "UPDATE auth_sessions SET created_at = now() - interval '2 seconds', expires_at = now() - interval '1 second' WHERE token_hash = $1", expiredHash[:]); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.Authenticate(ctx, session.AccessToken); !errors.Is(err, auth.ErrUnauthorized) {

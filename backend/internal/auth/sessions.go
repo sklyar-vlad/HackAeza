@@ -19,7 +19,7 @@ func (p *Postgres) FindCtx(ctx context.Context, token string) ([]byte, bool, err
 	}
 	var data []byte
 	err = p.pool.QueryRow(ctx, `SELECT session_data FROM auth_sessions
-		WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()`, hash).Scan(&data)
+		WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now() AND session_data IS NOT NULL`, hash).Scan(&data)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, false, nil
 	}

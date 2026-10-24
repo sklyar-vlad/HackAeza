@@ -1,83 +1,37 @@
+// Usage: node build-docs.mjs <openapi.yaml> <out dir>
+// Writes spec.json and both pages with the shared head and shell.
 import fs from "node:fs";
-import crypto from "node:crypto";
 import path from "node:path";
 import { parse } from "yaml";
 
-const site = "/reference/site";
-const spec = parse(fs.readFileSync("/reference/openapi.yaml", "utf8"));
-const exactSchemas =
-  parse(fs.readFileSync("/reference/openapi.yaml", "utf8"), {
-    intAsBigInt: true,
-  }).components?.schemas ?? {};
-const methods = new Set([
-  "get",
-  "put",
-  "post",
-  "patch",
-  "delete",
-  "head",
-  "options",
-  "trace",
-]);
-const operations = Object.entries(spec.paths).flatMap(([url, item]) =>
-  Object.entries(item)
-    .filter(([method]) => methods.has(method))
-    .map(([method, operation]) => ({
-      method: method.toUpperCase(),
-      path: url,
-      summary: operation.summary ?? url,
-      operationId: operation.operationId,
-      tags: operation.tags ?? [],
-      required: operation["x-required-by-case"] === true,
-    })),
-);
-const tags = spec.tags.map((tag) => ({
-  ...tag,
-  slug: tag.name.toLowerCase().replace(/\s+/g, "-"),
-  count: operations.filter((operation) => operation.tags.includes(tag.name))
-    .length,
-}));
-const metadata = {
-  info: spec.info,
-  openapi: spec.openapi,
-  tags,
-  operations,
-  schemaCount: Object.keys(spec.components?.schemas ?? {}).length,
-};
-fs.writeFileSync(path.join(site, "metadata.json"), JSON.stringify(metadata));
+const [specPath, out] = process.argv.slice(2);
+const site = path.dirname(new URL(import.meta.url).pathname);
+const read = (file) => fs.readFileSync(path.join(site, file), "utf8");
+
+// int64 limits do not fit a double: keep unsafe integers as strings.
+const spec = parse(fs.readFileSync(specPath, "utf8"), { intAsBigInt: true });
+fs.mkdirSync(out, { recursive: true });
 fs.writeFileSync(
-  path.join(site, "schemas.json"),
-  JSON.stringify(exactSchemas, (_key, value) => {
-    if (typeof value !== "bigint") return value;
-    return Number.isSafeInteger(Number(value))
-      ? Number(value)
-      : value.toString();
-  }),
+  path.join(out, "spec.json"),
+  JSON.stringify(spec, (_key, value) =>
+    typeof value !== "bigint"
+      ? value
+      : Number.isSafeInteger(Number(value))
+        ? Number(value)
+        : value.toString(),
+  ),
 );
-const shell = fs.readFileSync(path.join(site, "shell.html"), "utf8");
+
+const head = read("head.html");
+const shell = read("shell.html").replace(
+  "{{version}}",
+  `v${spec.info.version} · OpenAPI ${spec.openapi}`,
+);
 for (const page of ["index.html", "swagger.html"]) {
-  let html = fs.readFileSync(path.join(site, page), "utf8");
-  const content = html.match(
-    /<!-- page-content -->([\s\S]*?)<!-- \/page-content -->/,
-  );
-  if (!content) throw new Error(`Missing content in ${page}`);
-  html = html.replace(
-    content[0],
-    shell.replace("<!-- docs-content -->", content[1]),
-  );
-  for (const asset of [
-    "theme.js",
-    "theme.css",
-    "tokens.css",
-    "assets/icons.svg",
-    "assets/favicon.svg",
-  ]) {
-    const hash = crypto
-      .createHash("sha256")
-      .update(fs.readFileSync(path.join(site, asset)))
-      .digest("hex")
-      .slice(0, 12);
-    html = html.replaceAll(`./${asset}`, `./${asset}?v=${hash}`);
-  }
-  fs.writeFileSync(path.join(site, page), html);
+  const html = read(page)
+    .replace("<!-- head -->", head.trim())
+    .replace(/<!-- shell -->([\s\S]*?)<!-- \/shell -->/, (_match, content) =>
+      shell.replace("<!-- content -->", content.trim()),
+    );
+  fs.writeFileSync(path.join(out, page), html);
 }

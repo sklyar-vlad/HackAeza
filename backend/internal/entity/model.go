@@ -4,7 +4,6 @@ import "time"
 
 type FeatureKey string
 
-// These are the feature keys already described by the current OpenAPI examples.
 const (
 	FeatureRenewalWithoutAutoProlong FeatureKey = "renewalWithoutAutoProlong"
 	FeatureInsufficientRenewalFunds  FeatureKey = "insufficientRenewalFunds"
@@ -29,9 +28,6 @@ type ModelSettings struct {
 	LossFormula            string         `json:"lossFormula"`
 }
 
-// Pointer fields distinguish absent PATCH values from explicit zero.
-// Coefficients is merged by key; a zero coefficient disables a feature.
-// JSON presence/null checks and semantic validation belong to the model boundary.
 type ModelSettingsPatch struct {
 	ExpectedVersion        *int64          `json:"expectedVersion,omitempty"`
 	Coefficients           Coefficients    `json:"coefficients,omitempty"`

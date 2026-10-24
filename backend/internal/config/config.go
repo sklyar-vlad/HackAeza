@@ -7,9 +7,14 @@ import (
 )
 
 type Config struct {
-	Server          Server
-	DatabaseURL     string
-	SessionLifetime time.Duration
+	Server   Server
+	Database Database
+}
+
+type Database struct {
+	URL            string
+	MaxConnections int32
+	ConnectTimeout time.Duration
 }
 
 type Server struct {
@@ -21,30 +26,33 @@ type Server struct {
 	ShutdownTimeout   time.Duration
 }
 
-// NewConfig keeps the existing HTTP_PORT setting and the Flagman server timeout defaults.
-func NewConfig() (Config, error) {
+func NewConfig() Config {
 	port := os.Getenv("HTTP_PORT")
 	if port == "" {
 		port = "8081"
 	}
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		databaseURL = "postgres://hackaeza@localhost:5432/hackaeza?sslmode=disable"
-	}
-	lifetime := 8 * time.Hour
-	if text := os.Getenv("AUTH_SESSION_TTL"); text != "" {
-		var err error
-		lifetime, err = time.ParseDuration(text)
-		if err != nil || lifetime < time.Second || lifetime > 30*24*time.Hour {
-			return Config{}, errors.New("AUTH_SESSION_TTL must be between 1s and 720h")
-		}
-	}
-	return Config{DatabaseURL: databaseURL, SessionLifetime: lifetime, Server: Server{
+	return Config{Database: Database{
+		URL:            os.Getenv("POSTGRES_URL"),
+		MaxConnections: 10,
+		ConnectTimeout: 5 * time.Second,
+	}, Server: Server{
 		Port:              port,
 		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       time.Minute,
 		ShutdownTimeout:   5 * time.Second,
-	}}, nil
+	}}
+}
+
+func SessionLifetime() (time.Duration, error) {
+	lifetime := 8 * time.Hour
+	if text := os.Getenv("AUTH_SESSION_TTL"); text != "" {
+		var err error
+		lifetime, err = time.ParseDuration(text)
+		if err != nil || lifetime < time.Second || lifetime > 30*24*time.Hour {
+			return 0, errors.New("AUTH_SESSION_TTL must be between 1s and 720h")
+		}
+	}
+	return lifetime, nil
 }

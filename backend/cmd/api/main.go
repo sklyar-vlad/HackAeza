@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -11,116 +12,168 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/gin-gonic/gin"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/analytics"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/auth"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/config"
-	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/httpserver"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/customers"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/handler"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/migrations"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/postgres"
+	"go.uber.org/zap"
 )
 
 func main() {
-	if err := run(); err != nil {
-		message := "server stopped"
-		if len(os.Args) > 1 {
-			message = "command failed"
-		}
-		slog.Error(message, "error", err)
+	logger, err := zap.NewProduction()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "create logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = logger.Sync() }()
+
+	if err := run(logger); err != nil {
+		logger.Error("server stopped", zap.Error(err))
+		_ = logger.Sync()
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	cfg, err := config.NewConfig()
-	if err != nil {
-		return err
-	}
+func run(logger *zap.Logger) error {
+	cfg := config.NewConfig()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	pool, err := postgres.New(ctx, cfg.Database)
 	if err != nil {
-		return errors.New("invalid DATABASE_URL") // Parser errors may include credentials.
-	}
-	poolConfig.MaxConns = 10
-	poolConfig.ConnConfig.ConnectTimeout = 5 * time.Second
-	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
-	if err != nil {
-		return errors.New("cannot configure PostgreSQL pool")
+		return err
 	}
 	defer pool.Close()
+
 	if len(os.Args) > 1 && os.Args[1] == "migrate" {
 		if len(os.Args) != 3 {
 			return errors.New("usage: /server migrate up|down|status|version")
 		}
-		migrationCtx, cancelMigration := context.WithTimeout(ctx, 5*time.Minute)
-		defer cancelMigration()
+		migrationCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
 		return migrations.Run(migrationCtx, pool, os.Args[2], os.Stdout)
 	}
 	startupCtx, cancelStartup := context.WithTimeout(ctx, 15*time.Second)
 	defer cancelStartup()
-	users := auth.NewPostgres(pool)
 	if err := migrations.Check(startupCtx, pool); err != nil {
-		return errors.New("database schema is not ready: run task migrate:up and check PostgreSQL")
+		return fmt.Errorf("check database migrations: %w", err)
 	}
+	users := auth.NewPostgres(pool)
 	if len(os.Args) > 1 {
 		return manageUser(ctx, users, os.Args[1:])
 	}
-	service, err := auth.New(users, users, cfg.SessionLifetime)
+	lifetime, err := config.SessionLifetime()
 	if err != nil {
 		return err
 	}
-	handler := auth.NewHandler(service, slog.Default())
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if _, err := w.Write([]byte("{\"status\":\"ok\"}\n")); err != nil {
-			slog.Error("write health response", "error", err)
-		}
-	})
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		probeCtx, cancel := context.WithTimeout(r.Context(), time.Second)
+	service, err := auth.New(users, users, lifetime)
+	if err != nil {
+		return err
+	}
+	authHandler := auth.NewHandler(service, slog.Default())
+
+	gin.SetMode(gin.ReleaseMode)
+	router := handler.NewRouter(logger, pool)
+	api := router.Group("/api/v1")
+	customers.NewHandler(customers.NewService(customers.NewRepository(pool))).Register(api)
+	analytics.NewHandler(analytics.NewService(analytics.NewRepository(pool))).Register(api)
+
+	router.GET("/readyz", func(c *gin.Context) {
+		probeCtx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
 		defer cancel()
-		if err := pool.Ping(probeCtx); err != nil {
-			auth.JSON(w, r, http.StatusServiceUnavailable, map[string]any{"status": "not_ready", "database": "down", "snapshotLoaded": false})
+		var loaded bool
+		err := pool.QueryRow(probeCtx, `SELECT EXISTS (SELECT 1 FROM published_state p
+   JOIN calculation_versions c ON c.version = p.active_calculation_version WHERE c.source_version IS NOT NULL)`).Scan(&loaded)
+		if err != nil {
+			auth.JSON(c.Writer, c.Request, http.StatusServiceUnavailable, map[string]any{"status": "not_ready", "database": "down", "snapshotLoaded": false})
 			return
 		}
-		auth.JSON(w, r, http.StatusOK, map[string]any{"status": "ready", "database": "up", "snapshotLoaded": false})
+		auth.JSON(c.Writer, c.Request, http.StatusOK, map[string]any{"status": "ready", "database": "up", "snapshotLoaded": loaded})
 	})
-	api := http.NewServeMux()
-	handler.Register(mux, api)
-	// Register future business handlers on api: every route inherits authentication.
-	mux.Handle("/api/v1/", handler.RequireAuth(api))
+	public, protected := http.NewServeMux(), http.NewServeMux()
+	authHandler.Register(public, protected)
+	protected.Handle("/", router)
+	public.Handle("/api/v1/", authHandler.RequireAuth(protected))
+	public.Handle("/", router)
 	cleanupCtx, cancelCleanup := context.WithCancel(ctx)
 	defer cancelCleanup()
-	go pruneSessions(cleanupCtx, users)
+	go pruneSessions(cleanupCtx, users, logger)
 
 	server := &http.Server{
 		Addr:              net.JoinHostPort("", cfg.Server.Port),
-		Handler:           auth.RequestID(mux),
+		Handler:           auth.RequestID(public),
+		ErrorLog:          zap.NewStdLog(logger),
 		ReadTimeout:       cfg.Server.ReadTimeout,
 		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
 		WriteTimeout:      cfg.Server.WriteTimeout,
 		IdleTimeout:       cfg.Server.IdleTimeout,
 	}
 
-	return httpserver.Run(ctx, server, slog.Default(), cfg.Server.ShutdownTimeout)
+	return serve(ctx, server, logger, cfg.Server.ShutdownTimeout)
 }
 
-func pruneSessions(ctx context.Context, users *auth.Postgres) {
-	ticker := time.NewTicker(5 * time.Minute)
+func serve(ctx context.Context, server *http.Server, logger *zap.Logger, shutdownTimeout time.Duration) error {
+	if ctx.Err() != nil {
+		return nil
+	}
+
+	listener, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		return fmt.Errorf("listen HTTP: %w", err)
+	}
+
+	result := make(chan error, 1)
+	go func() {
+		result <- server.Serve(listener)
+	}()
+	logger.Info("service started", zap.String("addr", listener.Addr().String()))
+
+	select {
+	case err := <-result:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return fmt.Errorf("serve HTTP: %w", err)
+	case <-ctx.Done():
+	}
+	logger.Info("shutdown signal received")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		logger.Error("graceful shutdown failed", zap.Error(err))
+		closeErr := server.Close()
+		<-result
+		return errors.Join(fmt.Errorf("shutdown HTTP: %w", err), closeErr)
+	}
+
+	if err := <-result; !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("serve HTTP: %w", err)
+	}
+	logger.Info("server stopped gracefully")
+
+	return nil
+}
+
+func pruneSessions(ctx context.Context, users *auth.Postgres, logger *zap.Logger) {
+	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			pruneCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			err := users.Prune(pruneCtx)
-			cancel()
-			if err != nil && ctx.Err() == nil {
-				slog.Error("prune auth sessions failed", "error", err)
+			cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			if err := users.Prune(cleanupCtx); err != nil && ctx.Err() == nil {
+				logger.Error("prune sessions", zap.Error(err))
 			}
+			cancel()
 		}
 	}
 }

@@ -4,7 +4,6 @@ package migrations
 import (
 	"context"
 	"database/sql"
-	"embed"
 	"errors"
 	"fmt"
 	"io"
@@ -14,13 +13,11 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
+	schema "github.com/sklyar-vlad/HackAeza/backend"
 )
 
-//go:embed sql/*.sql
-var migrations embed.FS
-
 func migrationProvider(pool *pgxpool.Pool) (*goose.Provider, *sql.DB, error) {
-	source, err := fs.Sub(migrations, "sql")
+	source, err := fs.Sub(schema.Migrations, "migrations")
 	if err != nil {
 		return nil, nil, err
 	}

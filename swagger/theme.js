@@ -726,6 +726,7 @@
       "Edit Value": "Изменить",
       Close: "Закрыть",
       "Try it out": "Параметры запроса",
+      "Test Request": "Отправить запрос",
       Execute: "Выполнить запрос",
       Cancel: "Отменить",
       Clear: "Очистить",
@@ -836,7 +837,7 @@
           throw new Error("reference unavailable");
         reference = Scalar.createApiReference("#reference", {
           url: "./openapi.yaml",
-          baseServerURL: location.origin,
+          servers: [{ url: location.origin }],
           theme: "none",
           layout: "modern",
           showSidebar: false,
@@ -851,7 +852,7 @@
           agent: { disabled: true },
           telemetry: false,
           persistAuth: false,
-          hideTestRequestButton: true,
+          hideTestRequestButton: false,
           hideModels: true,
           defaultHttpClient: { targetKey: "http", clientKey: "http1.1" },
           featuredClients: ["http/http1.1"],
@@ -879,6 +880,7 @@
           validatorUrl: null,
           syntaxHighlight: false,
           displayRequestDuration: true,
+          tryItOutEnabled: true,
           plugins: [flatOperationTags],
           onComplete: () => {
             localizeInterface($("#swagger-ui"));

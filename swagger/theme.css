@@ -899,13 +899,11 @@ body {
 }
 #reference .explore-scalar,
 #reference .scalar-reference-intro-clients,
-#reference .scalar-reference-intro-auth,
 #reference a[href*="scalar.com"],
 #reference .selected-client-action,
 #reference .rendered-code-sdks,
 #reference .endpoints-card,
 #reference .generate-sdk-button,
-#reference .request-card-footer,
 #reference .show-more,
 #reference [data-doc-hidden] {
   display: none !important;

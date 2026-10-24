@@ -7,9 +7,12 @@ COPY docs/openapi.yaml /reference/openapi.yaml
 RUN node /reference/site/build-docs.mjs
 
 FROM swaggerapi/swagger-ui:latest
+ENV HTTP_PORT=8081
+COPY swagger/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=reference /reference/package/dist/browser/standalone.js /usr/share/nginx/html/reference.js
 COPY docs/openapi.yaml /usr/share/nginx/html/openapi.yaml
 COPY --from=reference /reference/site/index.html /reference/site/swagger.html /reference/site/tokens.css /reference/site/theme.css /reference/site/theme.js /reference/site/metadata.json /usr/share/nginx/html/
 COPY --from=reference /reference/site/schema-catalog.mjs /usr/share/nginx/html/schema-catalog.js
 COPY --from=reference /reference/site/schemas.json /usr/share/nginx/html/
 COPY swagger/assets /usr/share/nginx/html/assets
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s CMD wget -q -O /dev/null http://127.0.0.1:8080/swagger.html || exit 1

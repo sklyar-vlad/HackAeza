@@ -1,6 +1,11 @@
 version: '3'
 
 tasks:
+  backend:run:
+    dir: backend
+    cmds:
+      - go run .
+
   env:
     cmds:
       - test -e .env || cp .env.example .env
@@ -17,8 +22,8 @@ tasks:
 
   swagger:up:
     cmds:
-      - docker compose up -d --build
+      - docker compose up -d --build swagger
 
   swagger:down:
     cmds:
-      - docker compose down
+      - docker compose stop swagger

@@ -6,6 +6,6 @@ RUN node -e 'const fs=require("node:fs"),crypto=require("node:crypto"); for(cons
 
 FROM swaggerapi/swagger-ui:latest
 COPY --from=reference /reference/package/dist/browser/standalone.js /usr/share/nginx/html/reference.js
-COPY api/openapi.yaml /usr/share/nginx/html/openapi.yaml
+COPY docs/openapi.yaml /usr/share/nginx/html/openapi.yaml
 COPY --from=reference /reference/site/index.html /reference/site/swagger.html /reference/site/theme.css /reference/site/theme.js /usr/share/nginx/html/
 COPY swagger/assets /usr/share/nginx/html/assets

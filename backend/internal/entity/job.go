@@ -7,8 +7,9 @@ type JobID string
 type JobKind string
 
 const (
-	JobModelSettings  JobKind = "model_settings"
-	JobSourceSnapshot JobKind = "source_snapshot"
+	JobModelSettings     JobKind = "model_settings"
+	JobSourceSnapshot    JobKind = "source_snapshot"
+	JobTimeRecalculation JobKind = "time_recalculation"
 )
 
 type JobStatus string
@@ -48,8 +49,13 @@ type JobResult interface {
 	jobResult()
 }
 
-func (ModelSettingsResponse) jobResult() {}
-func (SnapshotResult) jobResult()        {}
+func (ModelSettingsResponse) jobResult()   {}
+func (SnapshotResult) jobResult()          {}
+func (TimeRecalculationResult) jobResult() {}
+
+type TimeRecalculationResult struct {
+	Calculation Calculation `json:"calculation"`
+}
 
 type CalculationJob struct {
 	JobID      JobID        `json:"jobId"`

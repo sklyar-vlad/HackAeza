@@ -6,7 +6,14 @@ import (
 )
 
 type Config struct {
-	Server Server
+	Server   Server
+	Database Database
+}
+
+type Database struct {
+	URL            string
+	MaxConnections int32
+	ConnectTimeout time.Duration
 }
 
 type Server struct {
@@ -23,7 +30,11 @@ func NewConfig() Config {
 	if port == "" {
 		port = "8081"
 	}
-	return Config{Server: Server{
+	return Config{Database: Database{
+		URL:            os.Getenv("POSTGRES_URL"),
+		MaxConnections: 10,
+		ConnectTimeout: 5 * time.Second,
+	}, Server: Server{
 		Port:              port,
 		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,

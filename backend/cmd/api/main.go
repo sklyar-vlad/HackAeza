@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/config"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/handler"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/postgres"
 	"go.uber.org/zap"
 )
 
@@ -37,6 +38,12 @@ func run(logger *zap.Logger) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	pool, err := postgres.New(ctx, cfg.Database)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
 
 	gin.SetMode(gin.ReleaseMode)
 	router := handler.NewRouter(logger)

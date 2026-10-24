@@ -33,7 +33,7 @@ type Claim struct {
 	Lease     Lease
 	Job       entity.CalculationJob
 	ExpiresAt time.Time
-	RequestID string 
+	RequestID string
 }
 
 type Reader interface {

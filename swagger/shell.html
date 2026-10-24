@@ -1,0 +1,144 @@
+<a class="skip-link" href="#docs-main">К основному содержимому</a>
+<button
+  class="sidebar-overlay"
+  id="sidebar-overlay"
+  type="button"
+  aria-label="Закрыть меню"
+  hidden
+></button>
+<aside
+  class="docs-sidebar"
+  id="docs-navigation"
+  aria-label="Разделы документации"
+>
+  <div class="sidebar-heading">
+    <span>Документация</span
+    ><button
+      class="icon-button mobile-only"
+      id="close-menu"
+      type="button"
+      aria-label="Закрыть навигацию"
+    >
+      <svg class="icon" aria-hidden="true">
+        <use href="./assets/icons.svg#close"></use>
+      </svg>
+    </button>
+  </div>
+  <label class="sidebar-search"
+    ><svg class="icon" aria-hidden="true">
+      <use href="./assets/icons.svg#search"></use></svg
+    ><input
+      id="docs-search"
+      type="search"
+      placeholder="Поиск по API"
+      aria-label="Поиск по разделам и операциям"
+    /><kbd aria-hidden="true">/</kbd></label
+  >
+  <nav id="section-navigation" aria-label="Разделы API"></nav>
+  <div id="search-results" class="search-results" hidden></div>
+  <p id="search-empty" class="sidebar-empty" hidden>Ничего не найдено</p>
+  <div class="sidebar-bottom">
+    <a class="nav-item" id="interactive-link" href="./swagger.html"
+      ><span>Swagger UI</span
+      ><svg class="icon" aria-hidden="true">
+        <use href="./assets/icons.svg#code"></use></svg
+    ></a>
+    <a class="nav-item" href="./openapi.yaml" download
+      ><span>Скачать OpenAPI</span
+      ><svg class="icon" aria-hidden="true">
+        <use href="./assets/icons.svg#download"></use></svg
+    ></a>
+    <a class="docs-brand" href="./" aria-label="HackAeza — документация"
+      ><span class="brand-mark" aria-hidden="true">h<span>a</span></span
+      ><span>HackAeza<small>База знаний · API</small></span></a
+    >
+  </div>
+</aside>
+<div class="docs-workspace">
+  <header class="docs-toolbar">
+    <button
+      class="icon-button mobile-only"
+      id="open-menu"
+      type="button"
+      aria-label="Открыть меню"
+      aria-controls="docs-navigation"
+      aria-expanded="false"
+    >
+      <svg class="icon" aria-hidden="true">
+        <use href="./assets/icons.svg#menu"></use>
+      </svg>
+    </button>
+    <div class="toolbar-context">
+      <span class="status-dot" aria-hidden="true"></span
+      ><span>Документация API</span
+      ><span class="contract-version" id="toolbar-version"></span>
+    </div>
+    <div class="toolbar-actions">
+      <nav class="view-tabs" aria-label="Режим документации">
+        <a href="./" data-view-link="reference">API Reference</a
+        ><a href="./swagger.html" data-view-link="swagger">Swagger UI</a>
+      </nav>
+      <fieldset class="theme-picker">
+        <legend class="sr-only">Тема оформления</legend>
+        <label title="Светлая тема"
+          ><input
+            type="radio"
+            name="docs-theme"
+            value="light"
+            aria-label="Светлая тема" /><svg class="icon" aria-hidden="true">
+            <use href="./assets/icons.svg#sun"></use></svg
+        ></label>
+        <label title="Тёмная тема"
+          ><input
+            type="radio"
+            name="docs-theme"
+            value="dark"
+            aria-label="Тёмная тема" /><svg class="icon" aria-hidden="true">
+            <use href="./assets/icons.svg#moon"></use></svg
+        ></label>
+        <label title="Системная тема"
+          ><input
+            type="radio"
+            name="docs-theme"
+            value="system"
+            aria-label="Системная тема" /><svg class="icon" aria-hidden="true">
+            <use href="./assets/icons.svg#monitor"></use></svg
+        ></label>
+      </fieldset>
+    </div>
+  </header>
+  <main id="docs-main" tabindex="-1">
+    <header class="docs-page-heading">
+      <div class="heading-copy">
+        <div class="breadcrumb">
+          <a href="./">База знаний</a><span>/</span
+          ><span id="current-section">API Reference</span>
+        </div>
+        <h1 id="page-title">Документация API</h1>
+        <p id="page-description">
+          Контракт HackAeza: данные, расчёт рисков и операции приложения.
+        </p>
+      </div>
+      <a
+        class="button secondary heading-download"
+        href="./openapi.yaml"
+        download
+        >OpenAPI YAML<svg class="icon" aria-hidden="true">
+          <use href="./assets/icons.svg#download"></use></svg
+      ></a>
+    </header>
+    <section
+      id="schema-catalog"
+      hidden
+      aria-label="Схемы данных контракта"
+    ></section>
+    <!-- docs-content -->
+  </main>
+  <footer class="docs-footer">
+    <span
+      >HackAeza <span class="footer-divider">/</span> Аналитика
+      непродлений</span
+    ><span id="footer-version">OpenAPI 3.0.3</span>
+  </footer>
+</div>
+<div class="docs-toast" id="docs-toast" role="status" hidden></div>

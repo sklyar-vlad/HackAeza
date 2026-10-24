@@ -7,3 +7,4 @@ testdata/*
 !testdata/data.json
 docs/*
 !docs/openapi.yaml
+/frontend-aeza/

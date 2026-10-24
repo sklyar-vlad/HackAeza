@@ -1,34 +1,54 @@
 <!doctype html>
 <html lang="ru" data-theme="light">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HackAeza API</title>
-  <script>
-    (() => {
-      let saved;
-      try { saved = localStorage.getItem("hackaeza-theme"); } catch (_) {}
-      const theme = saved;
-      document.documentElement.dataset.theme = theme === "dark" || theme === "light" ? theme : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    })();
-  </script>
-  <link rel="icon" href="./assets/favicon.svg">
-  <link rel="stylesheet" href="./swagger-ui.css">
-  <link rel="stylesheet" href="./theme.css">
-  <script defer src="./swagger-ui-bundle.js"></script>
-  <script defer src="./theme.js"></script>
-</head>
-<body class="swagger-page">
-  <header class="brand-header">
-    <a class="brand" href="./" aria-label="Aéza — документация API"><img src="./assets/logo.svg" width="108" height="36" alt="Aéza"></a>
-    <span>Документация <small>HackAeza API</small></span>
-    <nav aria-label="Документация">
-      <a href="./"><svg class="aeza-icon" aria-hidden="true" focusable="false"><use href="./assets/icons.svg#bookmark"></use></svg>API Reference</a>
-      <a href="./swagger.html" aria-current="page"><svg class="aeza-icon" aria-hidden="true" focusable="false"><use href="./assets/icons.svg#laptop-settings"></use></svg>Swagger</a>
-      <a href="./openapi.yaml" download><svg class="aeza-icon" aria-hidden="true" focusable="false"><use href="./assets/icons.svg#chevron-down"></use></svg>OpenAPI</a>
-    </nav>
-    <button id="theme-toggle" type="button" aria-pressed="false">Тёмная тема</button>
-  </header>
-  <div id="swagger-ui"></div>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Интерактивная спецификация API HackAeza — Swagger UI."
+    />
+    <title>Swagger UI — HackAeza</title>
+    <script>
+      try {
+        const p =
+          localStorage.getItem("hackaeza-docs-theme") ||
+          localStorage.getItem("hackaeza-aeza-preview-theme") ||
+          "system";
+        document.documentElement.dataset.theme =
+          p === "system"
+            ? matchMedia("(prefers-color-scheme:dark)").matches
+              ? "dark"
+              : "light"
+            : p === "dark"
+              ? "dark"
+              : "light";
+      } catch {
+        document.documentElement.dataset.theme = matchMedia(
+          "(prefers-color-scheme:dark)",
+        ).matches
+          ? "dark"
+          : "light";
+      }
+    </script>
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./swagger-ui.css" />
+    <link rel="stylesheet" href="./tokens.css" />
+    <link rel="stylesheet" href="./theme.css" />
+    <script defer src="./theme.js"></script>
+    <script defer src="./swagger-ui-bundle.js"></script>
+  </head>
+  <body class="swagger-page" data-view="swagger">
+    <!-- page-content -->
+    <div class="docs-notice">
+      <svg class="icon" aria-hidden="true">
+        <use href="./assets/icons.svg#info"></use>
+      </svg>
+      <p>
+        Для защищённых запросов используйте <strong>«Авторизоваться»</strong> и
+        Bearer-токен. Токен не сохраняется между сеансами документации.
+      </p>
+    </div>
+    <div id="swagger-ui"></div>
+    <!-- /page-content -->
+  </body>
 </html>

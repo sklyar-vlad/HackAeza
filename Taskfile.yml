@@ -8,7 +8,17 @@ tasks:
 
   env:
     cmds:
-      - test -e .env || cp .env.example .env
+      - test -e infra/.env || cp infra/.env.example infra/.env
+
+  up:
+    deps: [env]
+    cmds:
+      - docker compose --env-file infra/.env -f infra/compose.yaml up -d --build --wait
+
+  down:
+    deps: [env]
+    cmds:
+      - docker compose --env-file infra/.env -f infra/compose.yaml down
 
   lint:
     cmds:
@@ -21,9 +31,11 @@ tasks:
       - npm --prefix frontend run format
 
   swagger:up:
+    deps: [env]
     cmds:
-      - docker compose up -d --build swagger
+      - docker compose --env-file infra/.env -f infra/compose.yaml up -d --build swagger
 
   swagger:down:
+    deps: [env]
     cmds:
-      - docker compose stop swagger
+      - docker compose --env-file infra/.env -f infra/compose.yaml stop swagger

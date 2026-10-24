@@ -73,11 +73,11 @@ jobs:
           persist-credentials: false
 
       - name: Deployment not ready
-        if: hashFiles('compose.yaml') == ''
-        run: echo '::notice::Deploy skipped until compose.yaml exists in the repository root.'
+        if: hashFiles('infra/compose.yaml') == ''
+        run: echo '::notice::Deploy skipped until infra/compose.yaml exists.'
 
       - name: Deploy to VPS
-        if: hashFiles('compose.yaml') != ''
+        if: hashFiles('infra/compose.yaml') != ''
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
@@ -105,7 +105,14 @@ jobs:
           git diff --cached --quiet
           git fetch origin main
           git switch --detach "$1"
-          docker compose -p hackaeza config --quiet
-          docker compose -p hackaeza build
-          docker compose -p hackaeza up -d --no-build --wait --wait-timeout 120
+          if [ ! -f infra/.env ]; then
+            if [ -f .env ]; then
+              mv .env infra/.env
+            else
+              cp infra/.env.example infra/.env
+            fi
+          fi
+          docker compose --env-file infra/.env -f infra/compose.yaml -p hackaeza config --quiet
+          docker compose --env-file infra/.env -f infra/compose.yaml -p hackaeza build
+          docker compose --env-file infra/.env -f infra/compose.yaml -p hackaeza up -d --no-build --wait --wait-timeout 120
           DEPLOY

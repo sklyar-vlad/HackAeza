@@ -1,38 +1,68 @@
 <!doctype html>
 <html lang="ru" data-theme="light">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HackAeza API</title>
-  <script>
-    (() => {
-      let saved;
-      try { saved = localStorage.getItem("hackaeza-theme"); } catch (_) {}
-      const theme = saved;
-      document.documentElement.dataset.theme = theme === "dark" || theme === "light" ? theme : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    })();
-  </script>
-  <link rel="icon" href="./assets/favicon.svg">
-  <link rel="stylesheet" href="./theme.css">
-  <script defer src="./reference.js"></script>
-  <script defer src="./theme.js"></script>
-</head>
-<body>
-  <header class="brand-header" data-scalar-scroll-header>
-    <a class="brand" href="./" aria-label="Aéza — документация API"><img src="./assets/logo.svg" width="108" height="36" alt="Aéza"></a>
-    <span>Документация <small>Churn Risk API</small></span>
-    <nav aria-label="Документация">
-      <a href="./" aria-current="page"><svg class="aeza-icon" aria-hidden="true" focusable="false"><use href="./assets/icons.svg#bookmark"></use></svg>API Reference</a>
-      <a href="./swagger.html"><svg class="aeza-icon" aria-hidden="true" focusable="false"><use href="./assets/icons.svg#laptop-settings"></use></svg>Swagger</a>
-      <a href="./openapi.yaml" download><svg class="aeza-icon" aria-hidden="true" focusable="false"><use href="./assets/icons.svg#chevron-down"></use></svg>OpenAPI</a>
-    </nav>
-    <button id="theme-toggle" type="button" aria-pressed="false">Тёмная тема</button>
-  </header>
-  <p id="reference-status" class="loading" role="status">Загружаем документацию API…</p>
-  <main id="reference"></main>
-  <nav id="section-pager" class="section-pager" aria-label="Переход между разделами" hidden>
-    <button id="section-previous" type="button">Назад</button>
-    <button id="section-next" type="button">Следующий раздел</button>
-  </nav>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Документация API HackAeza: клиенты, аналитика, модель риска и импорт данных."
+    />
+    <title>Документация API — HackAeza</title>
+    <script>
+      try {
+        const p =
+          localStorage.getItem("hackaeza-docs-theme") ||
+          localStorage.getItem("hackaeza-aeza-preview-theme") ||
+          "system";
+        document.documentElement.dataset.theme =
+          p === "system"
+            ? matchMedia("(prefers-color-scheme:dark)").matches
+              ? "dark"
+              : "light"
+            : p === "dark"
+              ? "dark"
+              : "light";
+      } catch {
+        document.documentElement.dataset.theme = matchMedia(
+          "(prefers-color-scheme:dark)",
+        ).matches
+          ? "dark"
+          : "light";
+      }
+    </script>
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./tokens.css" />
+    <link rel="stylesheet" href="./theme.css" />
+    <script defer src="./theme.js"></script>
+    <script defer src="./reference.js"></script>
+  </head>
+  <body class="reference-page" data-view="reference">
+    <!-- page-content -->
+    <section id="docs-overview" class="docs-overview" hidden></section>
+    <div id="reference-content" hidden>
+      <div class="reference-loading" id="reference-status" role="status">
+        <span class="loading-spinner" aria-hidden="true"></span>Загружаем
+        документацию API…
+      </div>
+      <div id="reference"></div>
+      <nav
+        class="section-pager"
+        id="section-pager"
+        aria-label="Переход между разделами"
+        hidden
+      >
+        <button class="button secondary" id="section-previous" type="button">
+          <svg class="icon" aria-hidden="true">
+            <use href="./assets/icons.svg#arrow-left"></use></svg
+          ><span>Назад</span></button
+        ><button class="button primary" id="section-next" type="button">
+          <span>Далее</span
+          ><svg class="icon" aria-hidden="true">
+            <use href="./assets/icons.svg#arrow-right"></use>
+          </svg>
+        </button>
+      </nav>
+    </div>
+    <!-- /page-content -->
+  </body>
 </html>

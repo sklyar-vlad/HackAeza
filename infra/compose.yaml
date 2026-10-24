@@ -1,8 +1,10 @@
+name: hackaeza
+
 services:
   frontend:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: ..
+      dockerfile: infra/Dockerfile.frontend
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     depends_on:
@@ -10,7 +12,9 @@ services:
     restart: unless-stopped
 
   backend:
-    build: ./backend
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.backend
     environment:
       HTTP_PORT: ${HTTP_PORT:-8081}
     ports:
@@ -24,7 +28,7 @@ services:
 
   swagger:
     build:
-      context: .
+      context: ..
       dockerfile: swagger/Dockerfile
     ports:
       - "8080:8080"

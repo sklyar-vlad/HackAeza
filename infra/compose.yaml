@@ -9,6 +9,16 @@ x-postgres-client: &postgres-client
   PGPASSWORD: ${POSTGRES_PASSWORD:-hackaeza-local}
 
 services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
   postgres:
     image: postgres:17-alpine
     environment:
@@ -65,6 +75,7 @@ services:
     environment:
       <<: *postgres-client
       HTTP_PORT: ${HTTP_PORT:-8081}
+      REDIS_URL: ${REDIS_URL-redis://redis:6379/0}
     depends_on:
       goose:
         condition: service_completed_successfully

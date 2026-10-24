@@ -21,6 +21,7 @@ import (
 	"github.com/sklyar-vlad/HackAeza/backend/internal/customers"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/handler"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/jobs"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/model"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/migrations"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/postgres"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/redis"
@@ -93,6 +94,7 @@ func run(logger *zap.Logger) error {
 	source.NewHandler(source.NewService(source.NewRepository(pool, queue)), queue.SessionActor).Register(api)
 	customers.NewHandler(customers.NewService(customers.NewRepository(pool, cache))).Register(api)
 	analytics.NewHandler(analytics.NewService(analytics.NewRepository(pool, cache))).Register(api)
+	model.NewHandler(model.NewService(model.NewRepository(pool, queue))).Register(api)
 
 	router.GET("/readyz", func(c *gin.Context) {
 		probeCtx, cancel := context.WithTimeout(c.Request.Context(), time.Second)

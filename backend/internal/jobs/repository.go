@@ -122,6 +122,28 @@ func (r *Repository) Lookup(ctx context.Context, kind entity.JobKind, submission
 	return lookup(ctx, r.pool, kind, submission)
 }
 
+func (r *Repository) LookupForUpdate(ctx context.Context, tx pgx.Tx, kind entity.JobKind, submission Submission) (*Accepted, error) {
+	if tx == nil || !validSubmission(kind, submission) {
+		return nil, ErrInvalidInput
+	}
+	if err := lockState(ctx, tx); err != nil {
+		return nil, err
+	}
+	previous, err := lookup(ctx, tx, kind, submission)
+	if err != nil || previous != nil {
+		return previous, err
+	}
+	var active bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM calculation_jobs
+		WHERE status IN ('queued', 'running'))`).Scan(&active); err != nil {
+		return nil, err
+	}
+	if active {
+		return nil, entity.ErrJobInProgress
+	}
+	return nil, nil
+}
+
 func lookup(ctx context.Context, query rowQuerier, kind entity.JobKind, submission Submission) (*Accepted, error) {
 	if submission.IdempotencyKey == "" {
 		return nil, nil
@@ -153,6 +175,11 @@ func (r *Repository) Create(ctx context.Context, tx pgx.Tx, kind entity.JobKind,
 	if tx == nil || candidateVersion < 1 || !validSubmission(kind, submission) {
 		return Accepted{}, ErrInvalidInput
 	}
+	if previous, err := r.LookupForUpdate(ctx, tx, kind, submission); err != nil {
+		return Accepted{}, err
+	} else if previous != nil {
+		return *previous, nil
+	}
 	var accepted Accepted
 	err := tx.QueryRow(ctx, `SELECT coalesce(c.version, 0), coalesce(c.source_version, 0),
 		s.active_model_version, c.calculated_at FROM published_state s
@@ -161,19 +188,6 @@ func (r *Repository) Create(ctx context.Context, tx pgx.Tx, kind entity.JobKind,
 		&accepted.Calculation.SourceVersion, &accepted.Calculation.ModelVersion, &accepted.Calculation.CalculatedAt)
 	if err != nil {
 		return accepted, err
-	}
-	if previous, err := lookup(ctx, tx, kind, submission); err != nil {
-		return accepted, err
-	} else if previous != nil {
-		return *previous, nil
-	}
-	var active bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM calculation_jobs
-		WHERE status IN ('queued', 'running'))`).Scan(&active); err != nil {
-		return accepted, err
-	}
-	if active {
-		return accepted, entity.ErrJobInProgress
 	}
 	err = tx.QueryRow(ctx, `INSERT INTO calculation_jobs
 		(kind, created_by, request_id, candidate_source_version, candidate_model_version, base_calculation_version)

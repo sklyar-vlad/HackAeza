@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/entity"
 )
 
@@ -22,6 +23,12 @@ type Accepted struct {
 
 type Receipts interface {
 	Lookup(ctx context.Context, kind entity.JobKind, submission Submission) (*Accepted, error)
+}
+
+type Creator interface {
+	Receipts
+	LookupForUpdate(ctx context.Context, tx pgx.Tx, kind entity.JobKind, submission Submission) (*Accepted, error)
+	Create(ctx context.Context, tx pgx.Tx, kind entity.JobKind, candidateVersion int64, submission Submission) (Accepted, error)
 }
 
 type Lease struct {

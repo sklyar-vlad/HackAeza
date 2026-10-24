@@ -1,5 +1,9 @@
 .env
 .env.*
 !.env.example
-testdata
-docs
+node_modules/
+frontend/dist/
+testdata/*
+!testdata/data.json
+docs/*
+!docs/openapi.yaml

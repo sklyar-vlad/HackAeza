@@ -99,7 +99,7 @@ describe("SourcePage", () => {
     expect(await screen.findByText("Предупреждения: 1")).toBeTruthy();
     expect(screen.getByText("Старый prolong_wait")).toBeTruthy();
     const put = calls.find((c) => c.method === "PUT")!;
-    expect(put.body).toEqual(snapshot);
+    expect(JSON.parse(await (put.body as Blob).text())).toEqual(snapshot);
     expect(put.headers.get("Idempotency-Key")).toBeTruthy();
   });
 });

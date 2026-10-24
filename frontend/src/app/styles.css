@@ -156,29 +156,6 @@ p {
   align-items: start;
 }
 
-.rise > * {
-  animation: rise 0.6s var(--ease) backwards;
-}
-.rise > :nth-child(2) {
-  animation-delay: 0.06s;
-}
-.rise > :nth-child(3) {
-  animation-delay: 0.12s;
-}
-.rise > :nth-child(4) {
-  animation-delay: 0.18s;
-}
-.rise > :nth-child(n + 5) {
-  animation-delay: 0.24s;
-}
-
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-}
-
 /* ---------- cards ---------- */
 .card {
   min-width: 0;
@@ -403,6 +380,30 @@ p {
   );
 }
 .range.span::-moz-range-progress {
+  background: transparent;
+}
+
+/* several thumbs over one track: only the first input paints the track */
+.range-stack {
+  position: relative;
+  height: 20px;
+}
+.range-stack > .range {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  --k: var(--c);
+}
+.range-stack > .range::-webkit-slider-thumb {
+  pointer-events: auto;
+}
+.range-stack > .range::-moz-range-thumb {
+  pointer-events: auto;
+}
+.range-stack > .range + .range::-webkit-slider-runnable-track {
+  background: transparent;
+}
+.range-stack > .range + .range::-moz-range-track {
   background: transparent;
 }
 

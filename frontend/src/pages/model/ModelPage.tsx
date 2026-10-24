@@ -106,7 +106,7 @@ export function ModelPage() {
   const saveError = save.error instanceof ApiError ? save.error : null;
 
   return (
-    <form className="stack rise" onSubmit={submit}>
+    <form className="stack" onSubmit={submit}>
       <div className="page-head">
         <div>
           <h1>настройки модели</h1>
@@ -225,16 +225,11 @@ export function ModelPage() {
             </div>
             {(
               [
-                ["high", "Высокий", "thresholds.highFrom", highFrom, 100],
-                [
-                  "medium",
-                  "Средний",
-                  "thresholds.mediumFrom",
-                  mediumFrom,
-                  highFrom,
-                ],
+                ["high", "Высокий", highFrom, 100, ["high"]],
+                ["medium", "Средний", mediumFrom, highFrom, ["medium", "high"]],
+                ["low", "Низкий", 0, mediumFrom, ["medium"]],
               ] as const
-            ).map(([level, label, name, from, to]) => (
+            ).map(([level, label, from, to, bounds]) => (
               <div
                 key={level}
                 className={riskClass(level)}
@@ -252,44 +247,52 @@ export function ModelPage() {
                   }}
                 >
                   <i className="dot" />
-                  <label htmlFor={name} style={{ flex: 1 }}>
+                  <label htmlFor={`threshold-${level}`} style={{ flex: 1 }}>
                     {label}
                   </label>
                   <span className="num">
                     {from} – {to}
                   </span>
                 </div>
-                <input
-                  id={name}
-                  type="range"
-                  className="range span"
-                  min={0}
-                  max={100}
-                  {...register(name, { valueAsNumber: true })}
+                <div
+                  className="range-stack"
                   style={
                     {
-                      "--k": "var(--c)",
                       "--a": `${from}%`,
                       "--b": `${to}%`,
                     } as CSSProperties
                   }
-                />
+                >
+                  {bounds.map((bound, i) => (
+                    <input
+                      key={bound}
+                      id={i ? undefined : `threshold-${level}`}
+                      aria-label={i ? `${label}, верхняя граница` : undefined}
+                      type="range"
+                      className="range span"
+                      min={0}
+                      max={100}
+                      value={bound === "high" ? highFrom : mediumFrom}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        if (bound === "high")
+                          setValue(
+                            "thresholds.highFrom",
+                            Math.min(100, Math.max(mediumFrom + 1, v)),
+                            { shouldDirty: true, shouldValidate: true },
+                          );
+                        else
+                          setValue(
+                            "thresholds.mediumFrom",
+                            Math.min(highFrom - 1, Math.max(1, v)),
+                            { shouldDirty: true, shouldValidate: true },
+                          );
+                      }}
+                    />
+                  ))}
+                </div>
               </div>
             ))}
-            <div
-              className={riskClass("low")}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                paddingTop: 12,
-                borderTop: "1px solid var(--line)",
-              }}
-            >
-              <i className="dot" />
-              <span style={{ flex: 1 }}>Низкий</span>
-              <span className="num">0 – {mediumFrom}</span>
-            </div>
             {formState.errors.thresholds && (
               <p className="error-text">
                 {formState.errors.thresholds.message}

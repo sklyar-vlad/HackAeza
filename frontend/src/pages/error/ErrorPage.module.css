@@ -106,14 +106,12 @@
 
 .art {
   position: relative;
-  overflow: hidden;
-  border-radius: 12px;
-  background: var(--card);
+  margin-bottom: -12px;
 }
 
 .art img {
   position: absolute;
-  bottom: -2px;
+  bottom: 0;
   left: 50%;
   height: min(96%, 800px);
   transform: translateX(-46%);
@@ -159,8 +157,7 @@
   .art {
     position: absolute;
     inset: 0;
-    border-radius: 0;
-    background: none;
+    margin: 0;
     pointer-events: none;
   }
   .art img {

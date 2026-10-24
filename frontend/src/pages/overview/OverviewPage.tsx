@@ -22,10 +22,13 @@ export function OverviewPage() {
   const [days, setDays] = useState<(typeof PERIODS)[number]["value"]>("30");
   const { data: summary } = useGetAnalyticsSummary();
   const today = new Date();
-  const { data: churn } = useGetChurnSeries({
-    from: isoDay(today),
-    to: isoDay(new Date(today.getTime() + Number(days) * 86_400_000)),
-  });
+  const { data: churn } = useGetChurnSeries(
+    {
+      from: isoDay(today),
+      to: isoDay(new Date(today.getTime() + Number(days) * 86_400_000)),
+    },
+    { query: { meta: { inlineError: true } } },
+  );
   const { data: top } = useListCustomers({
     riskLevel: ["high"],
     sortBy: "potentialLoss",
@@ -37,7 +40,7 @@ export function OverviewPage() {
   const byRisk = summary?.customersByRisk;
 
   return (
-    <div className="stack rise">
+    <div className="stack">
       <div className="page-head">
         <div>
           <div className="home-word" aria-hidden="true">

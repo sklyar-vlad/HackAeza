@@ -13,6 +13,8 @@ export function RiskRing({
   total: number;
 }) {
   let offset = 0;
+  const filled = RISK_LEVELS.filter((l) => (counts?.[l] ?? 0) > 0).length;
+  const gap = filled > 1 ? 3 : 0;
   const label = RISK_LEVELS.map(
     (l) => `${riskLabel[l]}: ${counts?.[l] ?? 0}`,
   ).join(", ");
@@ -30,20 +32,24 @@ export function RiskRing({
         width="200"
         height="200"
         viewBox="0 0 200 200"
+        shapeRendering="geometricPrecision"
         role="img"
         aria-label={label}
       >
-        <circle
-          cx="100"
-          cy="100"
-          r={R}
-          fill="none"
-          stroke="var(--track)"
-          strokeWidth="18"
-        />
+        {total === 0 && (
+          <circle
+            cx="100"
+            cy="100"
+            r={R}
+            fill="none"
+            stroke="var(--track)"
+            strokeWidth="18"
+          />
+        )}
         {total > 0 &&
           RISK_LEVELS.map((level) => {
             const length = ((counts?.[level] ?? 0) / total) * C;
+            if (!length) return null;
             const segment = (
               <circle
                 key={level}
@@ -53,7 +59,7 @@ export function RiskRing({
                 fill="none"
                 stroke={`var(--${level})`}
                 strokeWidth="18"
-                strokeDasharray={`${length} ${C - length}`}
+                strokeDasharray={`${Math.max(length - gap, 1)} ${C - Math.max(length - gap, 1)}`}
                 strokeDashoffset={-offset}
                 transform="rotate(-90 100 100)"
                 style={{ transition: "stroke-dasharray 0.6s var(--ease)" }}

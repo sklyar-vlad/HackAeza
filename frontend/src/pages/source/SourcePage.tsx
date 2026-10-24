@@ -1,25 +1,29 @@
 import { useMutation } from "@tanstack/react-query";
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { JobNotice, useJob } from "@/entities/job";
 import {
-  replaceSourceSnapshot,
   useGetSourceStatus,
+  type JobAccepted,
   type SnapshotResult,
   type SourceCounts,
   type SourceSnapshot,
 } from "@/shared/api/generated/api";
 import { ReplaceSourceSnapshotBody } from "@/shared/api/generated/zod";
-import { ApiError } from "@/shared/api/http";
-import { date, int } from "@/shared/lib/format";
+import { ApiError, http } from "@/shared/api/http";
+import { bytes, date, dateOnly, int, time } from "@/shared/lib/format";
 import { Icon } from "@/shared/ui/Icon";
 import styles from "./SourcePage.module.css";
 
 type Picked = {
   name: string;
   size: number;
+  file?: File;
   snapshot?: SourceSnapshot;
   issues: string[];
 };
+
+const MAX_BYTES = 1 << 30;
+const PREVIEW_BYTES = 50 << 20;
 
 const ENTITIES: { key: keyof SourceCounts; label: string }[] = [
   { key: "accounts", label: "Аккаунты" },
@@ -29,12 +33,15 @@ const ENTITIES: { key: keyof SourceCounts; label: string }[] = [
 
 async function readSnapshot(file: File): Promise<Picked> {
   const picked = { name: file.name, size: file.size, issues: [] as string[] };
+  if (file.size > MAX_BYTES)
+    return { ...picked, issues: ["Файл больше 1 ГиБ, сервер его не примет"] };
+  if (file.size > PREVIEW_BYTES) return { ...picked, file };
   try {
     const parsed = ReplaceSourceSnapshotBody.safeParse(
       JSON.parse(await file.text()),
     );
     if (parsed.success)
-      return { ...picked, snapshot: parsed.data as SourceSnapshot };
+      return { ...picked, file, snapshot: parsed.data as SourceSnapshot };
     return {
       ...picked,
       issues: parsed.error.issues
@@ -49,13 +56,19 @@ async function readSnapshot(file: File): Promise<Picked> {
 export function SourcePage() {
   const { data: status } = useGetSourceStatus();
   const [picked, setPicked] = useState<Picked | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const { job, busy } = useJob(jobId ?? status?.pendingJobId);
 
   const upload = useMutation({
-    mutationFn: (snapshot: SourceSnapshot) =>
-      replaceSourceSnapshot(snapshot, {
-        headers: { "Idempotency-Key": crypto.randomUUID() },
+    mutationFn: (file: File) =>
+      http<JobAccepted>("/api/v1/source/snapshot", {
+        method: "PUT",
+        body: file,
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
       }),
     onSuccess: (accepted) => setJobId(accepted.jobId),
     meta: { inlineError: true },
@@ -67,9 +80,52 @@ export function SourcePage() {
       : null;
   const counts = result?.counts ?? status?.counts;
   const uploadError = upload.error instanceof ApiError ? upload.error : null;
+  const pick = async (file: File | null | undefined) => {
+    upload.reset();
+    if (file === null)
+      return setPicked({
+        name: "Файл не получен",
+        size: 0,
+        issues: [
+          "Приложение, из которого перетащили файл, не передало его браузеру. Сохраните файл и перетащите из Finder или выберите кнопкой.",
+        ],
+      });
+    setPicked(file ? await readSnapshot(file) : null);
+  };
+  const pickRef = useRef(pick);
+  pickRef.current = pick;
+
+  useEffect(() => {
+    const over = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      setDragging(true);
+    };
+    const leave = (e: DragEvent) => {
+      if (!e.relatedTarget) setDragging(false);
+    };
+    const drop = (e: DragEvent) => {
+      e.preventDefault();
+      setDragging(false);
+      const items = [...(e.dataTransfer?.items ?? [])];
+      void pickRef.current(
+        e.dataTransfer?.files[0] ??
+          items.find((i) => i.kind === "file")?.getAsFile() ??
+          null,
+      );
+    };
+    window.addEventListener("dragover", over, true);
+    window.addEventListener("dragleave", leave, true);
+    window.addEventListener("drop", drop, true);
+    return () => {
+      window.removeEventListener("dragover", over, true);
+      window.removeEventListener("dragleave", leave, true);
+      window.removeEventListener("drop", drop, true);
+    };
+  }, []);
 
   return (
-    <div className="stack rise">
+    <div className="stack">
       <div className="page-head">
         <div>
           <h1>источник данных</h1>
@@ -79,7 +135,7 @@ export function SourcePage() {
         </div>
       </div>
 
-      <section className="grid" style={{ "--min": "200px" } as CSSProperties}>
+      <section className={styles.kpis}>
         {ENTITIES.map((e) => (
           <div key={e.key} className="card">
             <div className="kpi-label">{e.label}</div>
@@ -88,10 +144,15 @@ export function SourcePage() {
         ))}
         <div className="card">
           <div className="kpi-label">Последняя загрузка</div>
-          <div className="kpi-value" style={{ fontSize: 20 }}>
-            {status?.snapshotPresent ? date(status.receivedAt) : "Нет данных"}
+          <div className="kpi-value">
+            {status?.snapshotPresent ? time(status.receivedAt) : "—"}
           </div>
-          <div className="kpi-sub">снимок от {date(status?.capturedAt)}</div>
+          <div className="kpi-sub">
+            {status?.snapshotPresent
+              ? dateOnly(status.receivedAt)
+              : "Нет данных"}
+            {status?.capturedAt && ` · снимок от ${date(status.capturedAt)}`}
+          </div>
         </div>
       </section>
 
@@ -106,7 +167,7 @@ export function SourcePage() {
           </div>
         </div>
         <div className="grid" style={{ "--min": "300px" } as CSSProperties}>
-          <label className={styles.drop}>
+          <label className={styles.drop} data-dragging={dragging || undefined}>
             <Icon name="upload" size={28} />
             <span>
               {picked
@@ -114,18 +175,15 @@ export function SourcePage() {
                 : "Перетащите файл сюда или нажмите для выбора"}
             </span>
             <span className="muted">
-              {picked
-                ? `${(picked.size / 1_048_576).toFixed(1)} МБ`
-                : "Формат .json"}
+              {picked?.size ? bytes(picked.size) : "Формат .json"}
             </span>
             <input
               type="file"
               accept=".json,application/json"
-              className="sr-only"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                upload.reset();
-                setPicked(file ? await readSnapshot(file) : null);
+              className={styles.file}
+              onChange={(e) => {
+                void pick(e.target.files?.[0]);
+                e.target.value = "";
               }}
             />
           </label>
@@ -135,28 +193,41 @@ export function SourcePage() {
                 {issue}
               </code>
             ))}
+            {picked?.file && !picked.snapshot && (
+              <p className={styles.hint}>
+                <Icon name="info" size={16} />
+                Файл больше 50 МБ, поэтому браузер не разбирает его заранее.
+                Структуру и связи проверит сервер после загрузки.
+              </p>
+            )}
             {picked?.snapshot && (
-              <div className="notice">
-                В файле: {int(picked.snapshot.accounts.length)} аккаунтов,{" "}
-                {int(picked.snapshot.services.length)} услуг,{" "}
-                {int(picked.snapshot.transactions.length)} транзакций
+              <div>
+                <h3 className={styles.subhead}>В файле</h3>
+                {ENTITIES.map((e) => (
+                  <div key={e.key} className={styles.entity}>
+                    <span>{e.label}</span>
+                    <strong className="num">
+                      {int(picked.snapshot![e.key].length)}
+                    </strong>
+                  </div>
+                ))}
               </div>
             )}
-            <div className="notice risk-medium">
-              <i className="dot" style={{ marginTop: 6 }} />
-              Текущие данные будут полностью заменены. Пустые массивы удалят
-              соответствующие записи.
-            </div>
             <button
               type="button"
               className="btn"
-              disabled={!picked?.snapshot || busy || upload.isPending}
-              onClick={() => picked?.snapshot && upload.mutate(picked.snapshot)}
+              disabled={!picked?.file || busy || upload.isPending}
+              onClick={() => picked?.file && upload.mutate(picked.file)}
             >
               {busy || upload.isPending
                 ? "Загружаем и пересчитываем…"
                 : "Загрузить и пересчитать"}
             </button>
+            <p className={styles.hint}>
+              <Icon name="info" size={16} />
+              Текущие данные заменятся целиком. Пустой массив удалит все записи
+              этого типа.
+            </p>
             {uploadError && (
               <p className="error-text" role="alert">
                 {uploadError.message}

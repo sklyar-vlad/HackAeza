@@ -1,6 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { motion } from "motion/react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Navigate, useNavigate } from "react-router";
@@ -56,12 +55,7 @@ export function LoginPage() {
       <div className={styles.phoneLogo}>
         <Logo size={32} />
       </div>
-      <motion.div
-        className={styles.cards}
-        initial={{ opacity: 0, y: 100 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1, ease: [0.65, 0, 0.35, 1] }}
-      >
+      <div className={styles.cards}>
         <section className={styles.card}>
           <div>
             <h1 className={styles.title}>вход в риск-панель</h1>
@@ -139,7 +133,7 @@ export function LoginPage() {
             </a>
           </div>
         </section>
-      </motion.div>
+      </div>
     </div>
   );
 }

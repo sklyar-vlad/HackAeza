@@ -67,7 +67,7 @@ export function CustomersPage() {
   });
 
   return (
-    <div className="stack rise">
+    <div className="stack">
       <div className="page-head">
         <div>
           <h1>клиенты</h1>

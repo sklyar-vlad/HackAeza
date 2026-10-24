@@ -10,6 +10,15 @@ const dateTime = new Intl.DateTimeFormat("ru-RU", {
   hour: "2-digit",
   minute: "2-digit",
 });
+const dayYear = new Intl.DateTimeFormat("ru-RU", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
+const clock = new Intl.DateTimeFormat("ru-RU", {
+  hour: "2-digit",
+  minute: "2-digit",
+});
 const day = new Intl.DateTimeFormat("ru-RU", {
   day: "numeric",
   month: "short",
@@ -22,6 +31,13 @@ export const money = (cents: number | null | undefined) =>
 
 export const int = (n: number) => number.format(n);
 
+export const bytes = (n: number) =>
+  n < 1024
+    ? `${n} Б`
+    : n < 1_048_576
+      ? `${(n / 1024).toFixed(1)} КБ`
+      : `${(n / 1_048_576).toFixed(1)} МБ`;
+
 export const score = (n: number | null | undefined) =>
   n == null ? "—" : String(Math.round(n));
 
@@ -30,6 +46,12 @@ export const percent = (part: number, total: number) =>
 
 export const date = (iso: string | null | undefined) =>
   iso ? dateTime.format(new Date(iso)) : "—";
+
+export const dateOnly = (iso: string | null | undefined) =>
+  iso ? dayYear.format(new Date(iso)) : "—";
+
+export const time = (iso: string | null | undefined) =>
+  iso ? clock.format(new Date(iso)) : "—";
 
 export const shortDay = (isoDate: string) => day.format(new Date(isoDate));
 

@@ -117,20 +117,17 @@ describe("ModelPage", () => {
     });
   });
 
-  it("blocks thresholds where medium is not below high", async () => {
-    const calls = stubApi(routes("succeeded"));
+  it("stops the medium threshold before the high one", async () => {
+    stubApi(routes("succeeded"));
     renderRoute(<ModelPage />, "/model");
     await ready();
 
     fireEvent.change(screen.getByLabelText("Средний"), {
       target: { value: "80" },
     });
-    await save();
 
-    expect(
-      await screen.findByText("Средний порог должен быть ниже высокого"),
-    ).toBeTruthy();
-    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+    expect(await screen.findByText("69 – 70")).toBeTruthy();
+    expect(screen.getByText("0 – 69")).toBeTruthy();
   });
 
   it("shows why a background recalculation failed", async () => {

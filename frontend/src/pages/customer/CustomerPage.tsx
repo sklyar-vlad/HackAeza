@@ -64,7 +64,7 @@ export function CustomerPage() {
   );
 
   return (
-    <div className="stack rise">
+    <div className="stack">
       <div className="page-head">
         <div>
           <Link

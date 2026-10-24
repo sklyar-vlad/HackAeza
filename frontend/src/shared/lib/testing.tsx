@@ -29,7 +29,7 @@ export function stubApi(routes: Routes) {
         method: init.method ?? "GET",
         url: input,
         headers: new Headers(init.headers),
-        body: typeof init.body === "string" ? JSON.parse(init.body) : undefined,
+        body: typeof init.body === "string" ? JSON.parse(init.body) : init.body,
       };
       calls.push(call);
       const handler = routes[`${call.method} ${input.split("?")[0]}`];

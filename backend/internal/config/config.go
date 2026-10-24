@@ -9,7 +9,10 @@ import (
 type Config struct {
 	Server   Server
 	Database Database
+	Redis    Redis
 }
+
+type Redis struct{ URL string }
 
 type Database struct {
 	URL            string
@@ -35,7 +38,7 @@ func NewConfig() Config {
 		URL:            os.Getenv("POSTGRES_URL"),
 		MaxConnections: 10,
 		ConnectTimeout: 5 * time.Second,
-	}, Server: Server{
+	}, Redis: Redis{URL: os.Getenv("REDIS_URL")}, Server: Server{
 		Port:              port,
 		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,

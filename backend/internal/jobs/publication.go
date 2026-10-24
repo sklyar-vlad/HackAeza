@@ -40,6 +40,10 @@ func (r *Repository) Publish(ctx context.Context, lease Lease, publish func(pgx.
 			if kind != entity.JobSourceSnapshot {
 				return ErrInvalidInput
 			}
+		case entity.TimeRecalculationResult, *entity.TimeRecalculationResult:
+			if kind != entity.JobTimeRecalculation {
+				return ErrInvalidInput
+			}
 		default:
 			return ErrInvalidInput
 		}
@@ -59,6 +63,7 @@ func (r *Repository) Publish(ctx context.Context, lease Lease, publish func(pgx.
 			return ErrInvalidInput
 		}
 		if (kind == entity.JobSourceSnapshot && calculation.ModelVersion != modelVersion) ||
+			(kind == entity.JobTimeRecalculation && (calculation.SourceVersion != sourceVersion || calculation.ModelVersion != modelVersion)) ||
 			(kind == entity.JobModelSettings && (calculation.SourceVersion != sourceVersion || output.Settings.Version != calculation.ModelVersion)) {
 			return entity.ErrVersionConflict
 		}
@@ -72,7 +77,8 @@ func (r *Repository) Publish(ctx context.Context, lease Lease, publish func(pgx.
 			AND s.active_model_version = c.model_version
 			AND c.base_version IS NOT DISTINCT FROM j.base_calculation_version
 			AND ((j.kind = 'source_snapshot' AND c.source_version = j.candidate_source_version)
-			OR (j.kind = 'model_settings' AND c.model_version = j.candidate_model_version)))`,
+			OR (j.kind = 'model_settings' AND c.model_version = j.candidate_model_version)
+			OR (j.kind = 'time_recalculation' AND c.source_version = $3 AND c.model_version = $4)))`,
 			lease.JobID, calculation.Version, calculation.SourceVersion, calculation.ModelVersion, calculation.CalculatedAt).Scan(&published)
 		if err != nil {
 			return err

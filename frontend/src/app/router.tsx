@@ -28,6 +28,20 @@ export const router = createBrowserRouter([
           "OverviewPage",
         ),
       },
+      {
+        path: "customers",
+        lazy: page(
+          () => import("@/pages/customers/CustomersPage"),
+          "CustomersPage",
+        ),
+      },
+      {
+        path: "customers/:id",
+        lazy: page(
+          () => import("@/pages/customer/CustomerPage"),
+          "CustomerPage",
+        ),
+      },
     ],
   },
   { path: "*", element: <Navigate to="/" replace /> },

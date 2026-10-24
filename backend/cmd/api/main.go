@@ -48,7 +48,7 @@ func run(logger *zap.Logger) error {
 	defer pool.Close()
 
 	gin.SetMode(gin.ReleaseMode)
-	router := handler.NewRouter(logger)
+	router := handler.NewRouter(logger, pool)
 	api := router.Group("/api/v1")
 	customers.NewHandler(customers.NewService(customers.NewRepository(pool))).Register(api)
 	analytics.NewHandler(analytics.NewService(analytics.NewRepository(pool))).Register(api)

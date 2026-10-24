@@ -7,8 +7,13 @@ services:
       dockerfile: infra/Dockerfile.frontend
     ports:
       - "${FRONTEND_PORT:-3000}:80"
+    environment:
+      HTTP_PORT: ${HTTP_PORT:-8081}
     depends_on:
-      - swagger
+      backend:
+        condition: service_healthy
+      swagger:
+        condition: service_healthy
     restart: unless-stopped
 
   backend:
@@ -30,5 +35,10 @@ services:
     build:
       context: ..
       dockerfile: swagger/Dockerfile
+    environment:
+      HTTP_PORT: ${HTTP_PORT:-8081}
+    depends_on:
+      backend:
+        condition: service_healthy
     ports:
       - "8080:8080"

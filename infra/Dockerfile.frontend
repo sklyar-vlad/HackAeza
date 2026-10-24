@@ -8,7 +8,8 @@ COPY swagger/assets /app/swagger/assets
 RUN npm run build
 
 FROM nginx:1.28-alpine
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+ENV HTTP_PORT=8081
+COPY frontend/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=build /app/frontend/dist /usr/share/nginx/html
 EXPOSE 80
-HEALTHCHECK --interval=15s --timeout=3s --start-period=5s CMD wget -q -O /dev/null http://127.0.0.1/healthz || exit 1
+HEALTHCHECK --interval=15s --timeout=3s --start-period=5s CMD wget -q -O /dev/null http://127.0.0.1/ || exit 1

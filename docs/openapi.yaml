@@ -930,7 +930,7 @@ components:
           $ref: '#/components/schemas/JobId'
         kind:
           type: string
-          enum: [model_settings, source_snapshot]
+          enum: [model_settings, source_snapshot, time_recalculation]
         status:
           $ref: '#/components/schemas/JobStatus'
         createdAt:
@@ -955,8 +955,10 @@ components:
           oneOf:
           - $ref: '#/components/schemas/ModelSettingsResponse'
           - $ref: '#/components/schemas/SnapshotResult'
+          - $ref: '#/components/schemas/TimeRecalculationResult'
           description: Только для succeeded. При kind=model_settings содержит ModelSettingsResponse,
-            при kind=source_snapshot — SnapshotResult. Версия в result — результат этого задания, она может
+            при kind=source_snapshot — SnapshotResult, при kind=time_recalculation — TimeRecalculationResult.
+            Версия в result — результат этого задания, она может
             быть уже не самой новой при последующих обновлениях.
         error:
           $ref: '#/components/schemas/JobError'
@@ -965,6 +967,13 @@ components:
         состояниях finishedAt задан. Для running startedAt задан и attempt>=1. Восстановление после падения
         Worker не меняет jobId. Обработка имеет семантику повторных попыток, а публикация — защиту от дублей
         и устаревшего владельца. Исчерпание ограниченного числа повторов завершает задание как failed.
+    TimeRecalculationResult:
+      type: object
+      required: [calculation]
+      additionalProperties: false
+      properties:
+        calculation:
+          $ref: '#/components/schemas/Calculation'
     ID:
       type: integer
       format: int64

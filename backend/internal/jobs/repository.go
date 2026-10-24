@@ -105,6 +105,12 @@ func scanJob(row pgx.Row, extra ...any) (entity.CalculationJob, error) {
 				return job, fmt.Errorf("decode snapshot job result: %w", err)
 			}
 			job.Result = value
+		case entity.JobTimeRecalculation:
+			var value entity.TimeRecalculationResult
+			if err := json.Unmarshal(result, &value); err != nil {
+				return job, fmt.Errorf("decode time job result: %w", err)
+			}
+			job.Result = value
 		}
 	}
 	if failure != nil {

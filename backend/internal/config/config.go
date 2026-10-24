@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"time"
 )
@@ -45,4 +46,16 @@ func NewConfig() Config {
 		IdleTimeout:       time.Minute,
 		ShutdownTimeout:   5 * time.Second,
 	}}
+}
+
+func SessionLifetime() (time.Duration, error) {
+	lifetime := 8 * time.Hour
+	if text := os.Getenv("AUTH_SESSION_TTL"); text != "" {
+		var err error
+		lifetime, err = time.ParseDuration(text)
+		if err != nil || lifetime < time.Second || lifetime > 30*24*time.Hour {
+			return 0, errors.New("AUTH_SESSION_TTL must be between 1s and 720h")
+		}
+	}
+	return lifetime, nil
 }

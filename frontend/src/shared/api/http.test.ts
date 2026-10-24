@@ -70,4 +70,24 @@ describe("http", () => {
       http("/api/v1/auth/logout", { method: "POST" }),
     ).resolves.toBeNull();
   });
+
+  it("does not clear a newer session when an older request returns 401", async () => {
+    useSession.setState({ token: "old", username: "analyst" });
+    stubApi({
+      "GET /api/v1/auth/me": () => {
+        useSession.getState().signIn("new", "another-user");
+        return [
+          401,
+          {
+            error: { code: "UNAUTHORIZED", message: "expired", requestId: "r" },
+          },
+        ];
+      },
+    });
+
+    await expect(http("/api/v1/auth/me")).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(useSession.getState().token).toBe("new");
+  });
 });

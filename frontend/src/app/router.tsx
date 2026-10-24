@@ -1,12 +1,7 @@
 import type { ComponentType } from "react";
 import { createBrowserRouter, Navigate } from "react-router";
-import { useSession } from "@/shared/model/session";
 import { AppLayout } from "@/widgets/layout/AppLayout";
-
-function Protected() {
-  const token = useSession((s) => s.token);
-  return token ? <AppLayout /> : <Navigate to="/login" replace />;
-}
+import { Protected } from "./Protected";
 
 // Each screen is its own chunk; only the shell stays in the entry bundle.
 const page =
@@ -19,7 +14,11 @@ export const router = createBrowserRouter([
     lazy: page(() => import("@/pages/login/LoginPage"), "LoginPage"),
   },
   {
-    element: <Protected />,
+    element: (
+      <Protected>
+        <AppLayout />
+      </Protected>
+    ),
     children: [
       {
         index: true,

@@ -30,7 +30,8 @@ export const http = async <T>(
   const res = await fetch(url, { ...init, headers });
   const body = res.status === 204 ? null : await res.json().catch(() => null);
 
-  if (res.status === 401 && token) useSession.getState().signOut();
+  if (res.status === 401 && token && useSession.getState().token === token)
+    useSession.getState().signOut();
   if (!res.ok) throw new ApiError(res.status, body);
   return body as T;
 };

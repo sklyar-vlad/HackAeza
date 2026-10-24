@@ -21,7 +21,7 @@ export function AppLayout() {
 
   const exit = () =>
     logout.mutate(undefined, {
-      onSettled: () => {
+      onSuccess: () => {
         signOut();
         queryClient.clear();
       },
@@ -80,6 +80,7 @@ export function AppLayout() {
               type="button"
               className="btn btn-icon"
               onClick={exit}
+              disabled={logout.isPending}
               aria-label="Выйти из аккаунта"
               title="Выйти"
             >
@@ -90,6 +91,11 @@ export function AppLayout() {
       </aside>
 
       <main className={styles.sheet}>
+        {logout.isError && (
+          <p role="alert" className="error-text">
+            Не удалось завершить сессию на сервере. Попробуйте выйти ещё раз.
+          </p>
+        )}
         <Outlet />
       </main>
     </div>

@@ -75,6 +75,7 @@ services:
     environment:
       <<: *postgres-client
       HTTP_PORT: ${HTTP_PORT:-8081}
+      AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-8h}
       REDIS_URL: ${REDIS_URL-redis://redis:6379/0}
     depends_on:
       goose:

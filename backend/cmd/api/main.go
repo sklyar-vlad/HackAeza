@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -12,15 +13,18 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+
 	"github.com/sklyar-vlad/HackAeza/backend/internal/analytics"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/auth"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/config"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/customers"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/handler"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/jobs"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/migrations"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/postgres"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/redis"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/source"
-	"go.uber.org/zap"
 )
 
 func main() {
@@ -55,6 +59,33 @@ func run(logger *zap.Logger) error {
 	}
 	defer func() { _ = cache.Close() }()
 
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		if len(os.Args) != 3 {
+			return errors.New("usage: /server migrate up|down|status|version")
+		}
+		migrationCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		return migrations.Run(migrationCtx, pool, os.Args[2], os.Stdout)
+	}
+	startupCtx, cancelStartup := context.WithTimeout(ctx, 15*time.Second)
+	defer cancelStartup()
+	if err := migrations.Check(startupCtx, pool); err != nil {
+		return fmt.Errorf("check database migrations: %w", err)
+	}
+	users := auth.NewPostgres(pool)
+	if len(os.Args) > 1 {
+		return manageUser(ctx, users, os.Args[1:])
+	}
+	lifetime, err := config.SessionLifetime()
+	if err != nil {
+		return err
+	}
+	service, err := auth.New(users, users, lifetime)
+	if err != nil {
+		return err
+	}
+	authHandler := auth.NewHandler(service, slog.Default())
+
 	gin.SetMode(gin.ReleaseMode)
 	router := handler.NewRouter(logger, pool)
 	api := router.Group("/api/v1")
@@ -63,9 +94,30 @@ func run(logger *zap.Logger) error {
 	customers.NewHandler(customers.NewService(customers.NewRepository(pool, cache))).Register(api)
 	analytics.NewHandler(analytics.NewService(analytics.NewRepository(pool, cache))).Register(api)
 
+	router.GET("/readyz", func(c *gin.Context) {
+		probeCtx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
+		defer cancel()
+		var loaded bool
+		err := pool.QueryRow(probeCtx, `SELECT EXISTS (SELECT 1 FROM published_state p
+   JOIN calculation_versions c ON c.version = p.active_calculation_version WHERE c.source_version IS NOT NULL)`).Scan(&loaded)
+		if err != nil {
+			auth.JSON(c.Writer, c.Request, http.StatusServiceUnavailable, map[string]any{"status": "not_ready", "database": "down", "snapshotLoaded": false})
+			return
+		}
+		auth.JSON(c.Writer, c.Request, http.StatusOK, map[string]any{"status": "ready", "database": "up", "snapshotLoaded": loaded})
+	})
+	public, protected := http.NewServeMux(), http.NewServeMux()
+	authHandler.Register(public, protected)
+	protected.Handle("/", router)
+	public.Handle("/api/v1/", authHandler.RequireAuth(protected))
+	public.Handle("/", router)
+	cleanupCtx, cancelCleanup := context.WithCancel(ctx)
+	defer cancelCleanup()
+	go pruneSessions(cleanupCtx, users, logger)
+
 	server := &http.Server{
 		Addr:              net.JoinHostPort("", cfg.Server.Port),
-		Handler:           router,
+		Handler:           auth.RequestID(public),
 		ErrorLog:          zap.NewStdLog(logger),
 		ReadTimeout:       cfg.Server.ReadTimeout,
 		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
@@ -118,4 +170,21 @@ func serve(ctx context.Context, server *http.Server, logger *zap.Logger, shutdow
 	logger.Info("server stopped gracefully")
 
 	return nil
+}
+
+func pruneSessions(ctx context.Context, users *auth.Postgres, logger *zap.Logger) {
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			if err := users.Prune(cleanupCtx); err != nil && ctx.Err() == nil {
+				logger.Error("prune sessions", zap.Error(err))
+			}
+			cancel()
+		}
+	}
 }

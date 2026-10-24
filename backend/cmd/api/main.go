@@ -2,46 +2,98 @@ package main
 
 import (
 	"context"
-	"log/slog"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/config"
-	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/httpserver"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/handler"
+	"go.uber.org/zap"
 )
 
 func main() {
-	if err := run(); err != nil {
-		slog.Error("server stopped", "error", err)
+	logger, err := zap.NewProduction()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "create logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() { _ = logger.Sync() }()
+
+	if err := run(logger); err != nil {
+		logger.Error("server stopped", zap.Error(err))
+		_ = logger.Sync()
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(logger *zap.Logger) error {
 	cfg := config.NewConfig()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if _, err := w.Write([]byte("{\"status\":\"ok\"}\n")); err != nil {
-			slog.Error("write health response", "error", err)
-		}
-	})
+	gin.SetMode(gin.ReleaseMode)
+	router := handler.NewRouter(logger)
 
 	server := &http.Server{
 		Addr:              net.JoinHostPort("", cfg.Server.Port),
-		Handler:           mux,
+		Handler:           router,
+		ErrorLog:          zap.NewStdLog(logger),
 		ReadTimeout:       cfg.Server.ReadTimeout,
 		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
 		WriteTimeout:      cfg.Server.WriteTimeout,
 		IdleTimeout:       cfg.Server.IdleTimeout,
 	}
 
-	return httpserver.Run(ctx, server, slog.Default(), cfg.Server.ShutdownTimeout)
+	return serve(ctx, server, logger, cfg.Server.ShutdownTimeout)
+}
+
+func serve(ctx context.Context, server *http.Server, logger *zap.Logger, shutdownTimeout time.Duration) error {
+	if ctx.Err() != nil {
+		return nil
+	}
+
+	listener, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		return fmt.Errorf("listen HTTP: %w", err)
+	}
+
+	result := make(chan error, 1)
+	go func() {
+		result <- server.Serve(listener)
+	}()
+	logger.Info("service started", zap.String("addr", listener.Addr().String()))
+
+	select {
+	case err := <-result:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return fmt.Errorf("serve HTTP: %w", err)
+	case <-ctx.Done():
+	}
+	logger.Info("shutdown signal received")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		logger.Error("graceful shutdown failed", zap.Error(err))
+		closeErr := server.Close()
+		<-result
+		return errors.Join(fmt.Errorf("shutdown HTTP: %w", err), closeErr)
+	}
+
+	if err := <-result; !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("serve HTTP: %w", err)
+	}
+	logger.Info("server stopped gracefully")
+
+	return nil
 }

@@ -9,8 +9,6 @@ import (
 
 const sourceTimeLayout = "2006-01-02T15:04:05.000Z"
 
-// SourceTimestamp preserves the source contract's UTC millisecond representation,
-// including .000, which time.Time.MarshalJSON would omit.
 type SourceTimestamp struct {
 	time.Time
 }

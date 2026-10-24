@@ -44,8 +44,6 @@ type JobError struct {
 	Details   []FieldError `json:"details,omitempty"`
 }
 
-// JobResult is the closed OpenAPI oneOf. Storage decodes the concrete result by JobKind.
-// Only successful jobs have a result; queued/running jobs have neither result nor error.
 type JobResult interface {
 	jobResult()
 }

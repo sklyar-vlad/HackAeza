@@ -18,7 +18,6 @@ type Server struct {
 	ShutdownTimeout   time.Duration
 }
 
-// NewConfig keeps the existing HTTP_PORT setting and the Flagman server timeout defaults.
 func NewConfig() Config {
 	port := os.Getenv("HTTP_PORT")
 	if port == "" {

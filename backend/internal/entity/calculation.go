@@ -2,7 +2,6 @@ package entity
 
 import "time"
 
-// Calculation identifies one published generation. CalculatedAt is null before the first run.
 type Calculation struct {
 	Version       int64      `json:"version"`
 	SourceVersion int64      `json:"sourceVersion"`
@@ -33,7 +32,6 @@ type RiskReason struct {
 	ServiceIDs []ID       `json:"serviceIds"`
 }
 
-// Score is a heuristic index, not a probability. Unknown is represented by nil, not zero.
 type RiskAssessment struct {
 	Status  AssessmentStatus `json:"status"`
 	Score   *float64         `json:"score"`
@@ -55,8 +53,6 @@ type Currency string
 
 const CurrencyEUR Currency = "EUR"
 
-// LossEstimate covers one nearest renewal per eligible service on the horizon.
-// AmountCents is nil when unassessable. IsPartial and UnassessedRevenueCents expose gaps.
 type LossEstimate struct {
 	AmountCents            *MoneyCents `json:"amountCents"`
 	Currency               Currency    `json:"currency"`
@@ -81,8 +77,6 @@ type ServiceAssessment struct {
 	Loss     LossEstimate    `json:"loss"`
 }
 
-// CustomerDetail is the common engine output and published customer read model.
-// Required array fields must be initialized to empty slices, rather than nil.
 type CustomerDetail struct {
 	Customer
 	Services []ServiceAssessment `json:"services"`

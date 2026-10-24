@@ -24,12 +24,8 @@ func (r *PostgresRepository) Lookup(ctx context.Context, kind entity.JobKind, su
 }
 
 func (r *PostgresRepository) AcceptSnapshot(ctx context.Context, snapshot entity.SourceSnapshot, submission jobs.Submission) (jobs.Accepted, error) {
-	payload, err := json.Marshal(snapshot)
-	if err != nil {
-		return jobs.Accepted{}, err
-	}
 	var accepted jobs.Accepted
-	err = pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		previous, err := r.queue.LookupForUpdate(ctx, tx, entity.JobSourceSnapshot, submission)
 		if err != nil {
 			return err
@@ -40,7 +36,16 @@ func (r *PostgresRepository) AcceptSnapshot(ctx context.Context, snapshot entity
 		}
 		var version int64
 		if err := tx.QueryRow(ctx, `INSERT INTO source_snapshots (raw_payload, captured_at)
-			VALUES ($1, $2) RETURNING version`, payload, snapshot.CapturedAt).Scan(&version); err != nil {
+			VALUES ('{"format":"parts"}'::jsonb, $1) RETURNING version`, snapshot.CapturedAt).Scan(&version); err != nil {
+			return err
+		}
+		if err := saveParts(ctx, tx, version, "accounts", snapshot.Accounts); err != nil {
+			return err
+		}
+		if err := saveParts(ctx, tx, version, "services", snapshot.Services); err != nil {
+			return err
+		}
+		if err := saveParts(ctx, tx, version, "transactions", snapshot.Transactions); err != nil {
 			return err
 		}
 		accepted, err = r.queue.Create(ctx, tx, entity.JobSourceSnapshot, version, submission)
@@ -70,3 +75,23 @@ func (r *PostgresRepository) Status(ctx context.Context) (entity.SourceStatus, e
 }
 
 var _ Repository = (*PostgresRepository)(nil)
+
+func saveParts[T any](ctx context.Context, tx pgx.Tx, version int64, kind string, rows []T) error {
+	const batchSize = 1000
+	next := 0
+	_, err := tx.CopyFrom(ctx, pgx.Identifier{"source_payload_parts"},
+		[]string{"snapshot_version", "kind", "batch_index", "payload"}, pgx.CopyFromFunc(func() ([]any, error) {
+			if next == len(rows) {
+				return nil, nil
+			}
+			end := min(next+batchSize, len(rows))
+			payload, err := json.Marshal(rows[next:end])
+			if err != nil {
+				return nil, err
+			}
+			values := []any{version, kind, next / batchSize, payload}
+			next = end
+			return values, nil
+		}))
+	return err
+}

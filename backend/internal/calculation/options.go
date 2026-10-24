@@ -17,8 +17,8 @@ type Options struct {
 
 func DefaultOptions() Options {
 	return Options{Parallelism: 4, BatchSize: 200, MaxBatchRecords: 50000,
-		PollInterval: time.Second, LeaseDuration: 30 * time.Second,
-		JobTimeout: 10 * time.Minute, OperationTimeout: 5 * time.Second}
+		PollInterval: time.Second, LeaseDuration: 2 * time.Minute,
+		JobTimeout: 10 * time.Minute, OperationTimeout: 30 * time.Second}
 }
 
 func (o Options) Validate() error {

@@ -2,12 +2,17 @@ package analytics
 
 import (
 	"context"
+	"time"
 
 	"github.com/sklyar-vlad/HackAeza/backend/internal/entity"
 )
 
 type Service struct {
 	repository *Repository
+}
+
+func (s *Service) Churn(ctx context.Context, from, to time.Time) (entity.ChurnSeries, error) {
+	return s.repository.Churn(ctx, from, to)
 }
 
 func NewService(repository *Repository) *Service {

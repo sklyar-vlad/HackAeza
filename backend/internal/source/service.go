@@ -5,8 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
-	"io"
+	"sort"
 	"time"
 
 	"github.com/sklyar-vlad/HackAeza/backend/internal/entity"
@@ -27,7 +26,7 @@ func (s *Service) Import(ctx context.Context, payload []byte, submission jobs.Su
 		return entity.JobAccepted{}, err
 	}
 	submission.PayloadHash = hash
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
 	defer cancel()
 	if previous, err := s.repository.Lookup(ctx, entity.JobSourceSnapshot, submission); err != nil {
 		return entity.JobAccepted{}, err
@@ -58,18 +57,69 @@ func acceptedResponse(accepted jobs.Accepted) entity.JobAccepted {
 }
 
 func snapshotHash(payload []byte) ([32]byte, error) {
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-	decoder.UseNumber()
-	var value, extra any
-	if err := decoder.Decode(&value); err != nil {
-		return [32]byte{}, ErrInvalidJSON
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil || fields == nil {
+		if !json.Valid(payload) {
+			return [32]byte{}, ErrInvalidJSON
+		}
+		return sha256.Sum256(bytes.TrimSpace(payload)), nil
 	}
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return [32]byte{}, ErrInvalidJSON
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		keys = append(keys, key)
 	}
-	canonical, err := json.Marshal(value)
-	if err != nil {
-		return [32]byte{}, err
+	sort.Strings(keys)
+	hash := sha256.New()
+	_, _ = hash.Write([]byte("{"))
+	for i, key := range keys {
+		if i > 0 {
+			_, _ = hash.Write([]byte(","))
+		}
+		encoded, _ := json.Marshal(key)
+		_, _ = hash.Write(encoded)
+		_, _ = hash.Write([]byte(":"))
+		raw := bytes.TrimSpace(fields[key])
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if len(raw) > 0 && raw[0] == '[' {
+			if _, err := decoder.Token(); err != nil {
+				return [32]byte{}, ErrInvalidJSON
+			}
+			_, _ = hash.Write([]byte("["))
+			first := true
+			for decoder.More() {
+				if !first {
+					_, _ = hash.Write([]byte(","))
+				}
+				first = false
+				var value any
+				if err := decoder.Decode(&value); err != nil {
+					return [32]byte{}, ErrInvalidJSON
+				}
+				encoded, err := json.Marshal(value)
+				if err != nil {
+					return [32]byte{}, err
+				}
+				_, _ = hash.Write(encoded)
+			}
+			if _, err := decoder.Token(); err != nil {
+				return [32]byte{}, ErrInvalidJSON
+			}
+			_, _ = hash.Write([]byte("]"))
+		} else {
+			var value any
+			if err := decoder.Decode(&value); err != nil {
+				return [32]byte{}, ErrInvalidJSON
+			}
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				return [32]byte{}, err
+			}
+			_, _ = hash.Write(encoded)
+		}
 	}
-	return sha256.Sum256(canonical), nil
+	_, _ = hash.Write([]byte("}"))
+	var sum [32]byte
+	copy(sum[:], hash.Sum(nil))
+	return sum, nil
 }

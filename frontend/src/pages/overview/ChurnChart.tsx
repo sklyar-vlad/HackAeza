@@ -10,7 +10,7 @@ export function ChurnChart({ points }: { points: ChurnPoint[] }) {
   const values = points.map((p) => p.forecastNonRenewals);
   const known = values.filter((v): v is number => v != null);
   if (!known.length)
-    return <p className="empty">Прогноз появится после первого расчёта</p>;
+    return <p className="empty">Нет данных для прогноза на выбранный период</p>;
 
   const max = Math.max(1, Math.ceil(Math.max(...known)));
   const x = (i: number) =>
@@ -76,6 +76,14 @@ export function ChurnChart({ points }: { points: ChurnPoint[] }) {
           strokeWidth="2.5"
           strokeLinejoin="round"
         />
+        {known.length === 1 && (
+          <circle
+            cx={x(values.findIndex((v) => v != null))}
+            cy={y(known[0])}
+            r="3"
+            fill="var(--accent)"
+          />
+        )}
       </svg>
       <figcaption className="muted" style={{ marginTop: 8 }}>
         Сценарий: около <strong className="num">{Math.round(total)}</strong>{" "}

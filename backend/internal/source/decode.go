@@ -8,7 +8,6 @@ import (
 	"io"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -21,57 +20,99 @@ var capturedTime = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\
 
 func DecodeSnapshot(reader io.Reader) (entity.SourceSnapshot, error) {
 	decoder := json.NewDecoder(reader)
-	var raw json.RawMessage
-	if err := decoder.Decode(&raw); err != nil {
+	token, err := decoder.Token()
+	if err != nil {
 		return entity.SourceSnapshot{}, fmt.Errorf("%w: %w", ErrInvalidJSON, err)
+	}
+	if token != json.Delim('{') {
+		return entity.SourceSnapshot{}, &ValidationError{Details: []entity.FieldError{{Path: "$", Message: "Ожидается объект JSON."}}}
+	}
+	var snapshot entity.SourceSnapshot
+	var issues validationErrors
+	seen := make(map[string]bool)
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return snapshot, fmt.Errorf("%w: %w", ErrInvalidJSON, err)
+		}
+		key := token.(string)
+		seen[key] = true
+		switch key {
+		case "accounts":
+			snapshot.Accounts, err = decodeArray[entity.Account](decoder, key, []string{"id", "email", "balance", "withdrawBalance", "bonusBalance", "bonusState", "totalReplenished"}, nil, &issues)
+		case "services":
+			snapshot.Services, err = decodeArray[entity.Service](decoder, key, []string{"id", "ownerId", "name", "paymentTerm", "autoProlong", "createdAt", "expiresAt", "status", "price"}, []string{"createdAt", "expiresAt"}, &issues)
+		case "transactions":
+			snapshot.Transactions, err = decodeArray[entity.Transaction](decoder, key, []string{"id", "serviceId", "amount", "status", "type", "createdAt", "performedAt"}, []string{"createdAt", "performedAt"}, &issues)
+		default:
+			var raw json.RawMessage
+			if err = decoder.Decode(&raw); err == nil {
+				if key != "capturedAt" {
+					issues.add(key, "Неизвестное поле снимка.")
+				} else {
+					var text string
+					if json.Unmarshal(raw, &text) != nil || !capturedTime.MatchString(text) {
+						issues.add(key, "Ожидается дата RFC 3339 с часовым поясом.")
+					} else {
+						value, parseErr := time.Parse(time.RFC3339Nano, strings.ToUpper(text))
+						if parseErr != nil {
+							issues.add(key, "Ожидается дата RFC 3339 с часовым поясом.")
+						} else {
+							snapshot.CapturedAt = &value
+						}
+					}
+				}
+			}
+		}
+		if err != nil {
+			return snapshot, err
+		}
+	}
+	if _, err := decoder.Token(); err != nil {
+		return snapshot, fmt.Errorf("%w: %w", ErrInvalidJSON, err)
 	}
 	var extra json.RawMessage
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err == nil {
-			err = errors.New("expected exactly one JSON document")
-		}
-		return entity.SourceSnapshot{}, fmt.Errorf("%w: %w", ErrInvalidJSON, err)
+		return snapshot, ErrInvalidJSON
 	}
-	var issues validationErrors
-	object := readObject(raw, "$", []string{"accounts", "services", "transactions"}, &issues)
-	allowed := map[string]bool{"accounts": true, "services": true, "transactions": true, "capturedAt": true}
-	var unknown []string
-	for name := range object {
-		if !allowed[name] {
-			unknown = append(unknown, name)
+	for _, key := range []string{"accounts", "services", "transactions"} {
+		if !seen[key] {
+			issues.add(key, "Обязательное поле отсутствует.")
 		}
 	}
-	sort.Strings(unknown)
-	for _, name := range unknown {
-		issues.add(name, "Неизвестное поле снимка.")
+	return snapshot, issues.err()
+}
+
+func decodeArray[T any](decoder *json.Decoder, name string, required, timestamps []string, issues *validationErrors) ([]T, error) {
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidJSON, err)
 	}
-	snapshot := entity.SourceSnapshot{
-		Accounts: decodeRecords[entity.Account](object["accounts"], "accounts",
-			[]string{"id", "email", "balance", "withdrawBalance", "bonusBalance", "bonusState", "totalReplenished"}, nil, &issues),
-		Services: decodeRecords[entity.Service](object["services"], "services",
-			[]string{"id", "ownerId", "name", "paymentTerm", "autoProlong", "createdAt", "expiresAt", "status", "price"},
-			[]string{"createdAt", "expiresAt"}, &issues),
-		Transactions: decodeRecords[entity.Transaction](object["transactions"], "transactions",
-			[]string{"id", "serviceId", "amount", "status", "type", "createdAt", "performedAt"},
-			[]string{"createdAt", "performedAt"}, &issues),
+	if token != json.Delim('[') {
+		return nil, &ValidationError{Details: []entity.FieldError{{Path: name, Message: "Ожидается массив объектов."}}}
 	}
-	if captured, present := object["capturedAt"]; present {
-		var text string
-		if err := json.Unmarshal(captured, &text); err != nil || !capturedTime.MatchString(text) {
-			issues.add("capturedAt", "Ожидается дата RFC 3339 с часовым поясом.")
-		} else {
-			timestamp, err := time.Parse(time.RFC3339Nano, strings.ToUpper(text))
-			if err != nil {
-				issues.add("capturedAt", "Ожидается дата RFC 3339 с часовым поясом.")
-			} else {
-				snapshot.CapturedAt = &timestamp
-			}
+	values := make([]T, 0)
+	for index := 0; decoder.More(); index++ {
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrInvalidJSON, err)
 		}
+		var recordIssues validationErrors
+		wrapped := make([]byte, 0, len(raw)+2)
+		wrapped = append(wrapped, '[')
+		wrapped = append(wrapped, raw...)
+		wrapped = append(wrapped, ']')
+		records := decodeRecords[T](wrapped, name, required, timestamps, &recordIssues)
+		for _, issue := range recordIssues {
+			issue.Path = strings.Replace(issue.Path, name+"[0]", fmt.Sprintf("%s[%d]", name, index), 1)
+			issues.add(issue.Path, issue.Message)
+		}
+		values = append(values, records...)
 	}
-	if err := issues.err(); err != nil {
-		return entity.SourceSnapshot{}, err
+	if _, err := decoder.Token(); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidJSON, err)
 	}
-	return snapshot, nil
+	return values, nil
 }
 
 func decodeRecords[T any](raw json.RawMessage, name string, required, timestamps []string, issues *validationErrors) []T {

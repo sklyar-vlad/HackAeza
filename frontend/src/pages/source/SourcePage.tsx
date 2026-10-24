@@ -16,6 +16,7 @@ import styles from "./SourcePage.module.css";
 import { UploadMeter } from "./UploadMeter";
 
 type Picked = {
+  key: string;
   name: string;
   size: number;
   file?: File;
@@ -24,7 +25,7 @@ type Picked = {
 };
 
 const MAX_BYTES = 1 << 30;
-const PREVIEW_BYTES = 50 << 20;
+const PREVIEW_BYTES = 10 << 20;
 
 const ENTITIES: { key: keyof SourceCounts; label: string }[] = [
   { key: "accounts", label: "Аккаунты" },
@@ -33,7 +34,12 @@ const ENTITIES: { key: keyof SourceCounts; label: string }[] = [
 ];
 
 async function readSnapshot(file: File): Promise<Picked> {
-  const picked = { name: file.name, size: file.size, issues: [] as string[] };
+  const picked = {
+    key: crypto.randomUUID(),
+    name: file.name,
+    size: file.size,
+    issues: [] as string[],
+  };
   if (file.size > MAX_BYTES)
     return { ...picked, issues: ["Файл больше 1 ГиБ, сервер его не примет"] };
   if (file.size > PREVIEW_BYTES) return { ...picked, file };
@@ -66,7 +72,7 @@ export function SourcePage() {
   const { job, busy } = useJob(jobId ?? status?.pendingJobId);
 
   const send = useMutation({
-    mutationFn: (file: File) => {
+    mutationFn: ({ file, key }: { file: File; key: string }) => {
       setSending({
         progress: { loaded: 0, total: file.size },
         startedAt: Date.now(),
@@ -77,7 +83,7 @@ export function SourcePage() {
         file,
         {
           "Content-Type": "application/json",
-          "Idempotency-Key": crypto.randomUUID(),
+          "Idempotency-Key": key,
         },
         (progress) => setSending((s) => s && { ...s, progress }),
       );
@@ -98,6 +104,7 @@ export function SourcePage() {
     send.reset();
     if (file === null)
       return setPicked({
+        key: crypto.randomUUID(),
         name: "Файл не получен",
         size: 0,
         issues: [
@@ -221,7 +228,7 @@ export function SourcePage() {
             {picked?.file && !picked.snapshot && (
               <p className={styles.hint}>
                 <Icon name="info" size={16} />
-                Файл больше 50 МБ, поэтому браузер не разбирает его заранее.
+                Файл больше 10 МБ, поэтому браузер не разбирает его заранее.
                 Структуру и связи проверит сервер после загрузки.
               </p>
             )}
@@ -241,8 +248,16 @@ export function SourcePage() {
             <button
               type="button"
               className="btn"
-              disabled={!picked?.file || busy || send.isPending}
-              onClick={() => picked?.file && send.mutate(picked.file)}
+              disabled={
+                !picked?.file ||
+                picked.issues.length > 0 ||
+                busy ||
+                send.isPending
+              }
+              onClick={() =>
+                picked?.file &&
+                send.mutate({ file: picked.file, key: picked.key })
+              }
             >
               {busy || send.isPending
                 ? "Загружаем и пересчитываем…"

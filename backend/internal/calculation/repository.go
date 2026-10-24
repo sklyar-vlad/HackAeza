@@ -136,16 +136,22 @@ func normalizeSnapshot(ctx context.Context, tx pgx.Tx, version int64) error {
 	}
 	for _, statement := range []string{
 		`INSERT INTO accounts SELECT s.version, x.id, x.email, x.balance, x."withdrawBalance", x."bonusBalance", x."bonusState", x."totalReplenished"
-		FROM source_snapshots s CROSS JOIN LATERAL jsonb_to_recordset(s.raw_payload->'accounts') AS x
+		FROM (SELECT version, raw_payload->'accounts' AS payload FROM source_snapshots WHERE version = $1
+ UNION ALL SELECT snapshot_version, payload FROM source_payload_parts WHERE snapshot_version = $1 AND kind = 'accounts') s
+ CROSS JOIN LATERAL jsonb_to_recordset(s.payload) AS x
 		(id bigint, email text, balance bigint, "withdrawBalance" bigint, "bonusBalance" bigint, "bonusState" text, "totalReplenished" bigint)
 		WHERE s.version = $1`,
 		`INSERT INTO services SELECT s.version, x.id, x."ownerId", x.name, x."paymentTerm", x."autoProlong",
 		x."createdAt", x."expiresAt", x.status, x.price
-		FROM source_snapshots s CROSS JOIN LATERAL jsonb_to_recordset(s.raw_payload->'services') AS x
+		FROM (SELECT version, raw_payload->'services' AS payload FROM source_snapshots WHERE version = $1
+ UNION ALL SELECT snapshot_version, payload FROM source_payload_parts WHERE snapshot_version = $1 AND kind = 'services') s
+ CROSS JOIN LATERAL jsonb_to_recordset(s.payload) AS x
 		(id bigint, "ownerId" bigint, name text, "paymentTerm" text, "autoProlong" boolean,
 		"createdAt" timestamptz, "expiresAt" timestamptz, status text, price bigint) WHERE s.version = $1`,
 		`INSERT INTO transactions SELECT s.version, x.id, x."serviceId", x.amount, x.status, x.type, x."createdAt", x."performedAt"
-		FROM source_snapshots s CROSS JOIN LATERAL jsonb_to_recordset(s.raw_payload->'transactions') AS x
+		FROM (SELECT version, raw_payload->'transactions' AS payload FROM source_snapshots WHERE version = $1
+ UNION ALL SELECT snapshot_version, payload FROM source_payload_parts WHERE snapshot_version = $1 AND kind = 'transactions') s
+ CROSS JOIN LATERAL jsonb_to_recordset(s.payload) AS x
 		(id bigint, "serviceId" bigint, amount integer, status text, type text, "createdAt" timestamptz, "performedAt" timestamptz)
 		WHERE s.version = $1`,
 		`UPDATE source_snapshots SET accounts_count = (SELECT count(*) FROM accounts WHERE snapshot_version = $1),

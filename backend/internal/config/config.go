@@ -40,9 +40,9 @@ func NewConfig() Config {
 		ConnectTimeout: 5 * time.Second,
 	}, Redis: Redis{URL: os.Getenv("REDIS_URL")}, Server: Server{
 		Port:              port,
-		ReadTimeout:       10 * time.Second,
+		ReadTimeout:       5 * time.Minute,
 		ReadHeaderTimeout: 5 * time.Second,
-		WriteTimeout:      10 * time.Second,
+		WriteTimeout:      5 * time.Minute,
 		IdleTimeout:       time.Minute,
 		ShutdownTimeout:   5 * time.Second,
 	}}

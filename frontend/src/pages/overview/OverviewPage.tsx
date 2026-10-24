@@ -22,10 +22,15 @@ export function OverviewPage() {
   const [days, setDays] = useState<(typeof PERIODS)[number]["value"]>("30");
   const { data: summary } = useGetAnalyticsSummary();
   const today = new Date();
-  const { data: churn } = useGetChurnSeries(
+  const {
+    data: churn,
+    isPending: churnLoading,
+    isError: churnError,
+    refetch: refetchChurn,
+  } = useGetChurnSeries(
     {
       from: isoDay(today),
-      to: isoDay(new Date(today.getTime() + Number(days) * 86_400_000)),
+      to: isoDay(new Date(today.getTime() + (Number(days) - 1) * 86_400_000)),
     },
     { query: { meta: { inlineError: true } } },
   );
@@ -144,7 +149,26 @@ export function OverviewPage() {
               onChange={setDays}
             />
           </div>
-          <ChurnChart points={churn?.points ?? []} />
+          {churnError ? (
+            <div className="empty" role="alert">
+              <p>Не удалось загрузить прогноз непродлений.</p>
+              <button className="btn" onClick={() => void refetchChurn()}>
+                Повторить
+              </button>
+            </div>
+          ) : churnLoading ? (
+            <p className="empty" role="status">
+              Загрузка прогноза…
+            </p>
+          ) : (
+            <>
+              <ChurnChart points={churn?.points ?? []} />
+              <p className="muted" style={{ marginBottom: 0 }}>
+                Сценарная оценка по индексу риска, не вероятность оттока.
+                Горизонт модели — {summary?.loss.horizonDays ?? "—"} дней.
+              </p>
+            </>
+          )}
         </section>
       </div>
 

@@ -66,6 +66,7 @@ export function ModelPage() {
         headers: { "Idempotency-Key": crypto.randomUUID() },
       }),
     onSuccess: (accepted) => setJobId(accepted.jobId),
+    meta: { inlineError: true },
   });
 
   if (!data || !registry)

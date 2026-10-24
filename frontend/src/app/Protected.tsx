@@ -12,6 +12,7 @@ export function Protected({ children }: { children: ReactNode }) {
       retry: false,
       staleTime: 0,
       refetchInterval: 60_000,
+      meta: { inlineError: true },
     },
   });
 

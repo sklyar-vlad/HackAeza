@@ -33,7 +33,9 @@ const term: Record<string, string> = {
 
 export function CustomerPage() {
   const id = Number(useParams().id);
-  const { data, error } = useGetCustomer(id);
+  const { data, error } = useGetCustomer(id, {
+    query: { meta: { inlineError: true } },
+  });
   const { data: registry } = useListModelFeatures();
   const [type, setType] = useState<ListCustomerTransactionsType | "all">("all");
   const [status, setStatus] = useState<ListCustomerTransactionsStatus | "all">(

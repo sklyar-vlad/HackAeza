@@ -28,7 +28,7 @@ export function LoginPage() {
   const { theme, toggleTheme } = usePrefs();
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
-  const login = useLogin();
+  const login = useLogin({ mutation: { meta: { inlineError: true } } });
   const queryClient = useQueryClient();
   const {
     register,

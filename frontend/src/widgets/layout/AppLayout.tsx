@@ -17,7 +17,7 @@ export function AppLayout() {
   const { username, signOut } = useSession();
   const { theme, toggleTheme } = usePrefs();
   const queryClient = useQueryClient();
-  const logout = useLogout();
+  const logout = useLogout({ mutation: { meta: { inlineError: true } } });
 
   const exit = () =>
     logout.mutate(undefined, {

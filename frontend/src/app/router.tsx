@@ -1,5 +1,7 @@
 import type { ComponentType } from "react";
-import { createBrowserRouter, Navigate } from "react-router";
+import { createBrowserRouter, Outlet } from "react-router";
+import { NotFoundPage, ServerErrorPage } from "@/pages/error/ErrorPage";
+import { ErrorDialog } from "@/widgets/error-dialog/ErrorDialog";
 import { AppLayout } from "@/widgets/layout/AppLayout";
 import { Protected } from "./Protected";
 
@@ -8,48 +10,63 @@ const page =
   <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) =>
   async () => ({ Component: (await load())[name] });
 
+function Root() {
+  return (
+    <>
+      <Outlet />
+      <ErrorDialog />
+    </>
+  );
+}
+
 export const router = createBrowserRouter([
   {
-    path: "/login",
-    lazy: page(() => import("@/pages/login/LoginPage"), "LoginPage"),
-  },
-  {
-    element: (
-      <Protected>
-        <AppLayout />
-      </Protected>
-    ),
+    element: <Root />,
+    errorElement: <ServerErrorPage />,
     children: [
       {
-        index: true,
-        lazy: page(
-          () => import("@/pages/overview/OverviewPage"),
-          "OverviewPage",
+        path: "/login",
+        lazy: page(() => import("@/pages/login/LoginPage"), "LoginPage"),
+      },
+      {
+        element: (
+          <Protected>
+            <AppLayout />
+          </Protected>
         ),
+        children: [
+          {
+            index: true,
+            lazy: page(
+              () => import("@/pages/overview/OverviewPage"),
+              "OverviewPage",
+            ),
+          },
+          {
+            path: "customers",
+            lazy: page(
+              () => import("@/pages/customers/CustomersPage"),
+              "CustomersPage",
+            ),
+          },
+          {
+            path: "customers/:id",
+            lazy: page(
+              () => import("@/pages/customer/CustomerPage"),
+              "CustomerPage",
+            ),
+          },
+          {
+            path: "model",
+            lazy: page(() => import("@/pages/model/ModelPage"), "ModelPage"),
+          },
+          {
+            path: "source",
+            lazy: page(() => import("@/pages/source/SourcePage"), "SourcePage"),
+          },
+        ],
       },
-      {
-        path: "customers",
-        lazy: page(
-          () => import("@/pages/customers/CustomersPage"),
-          "CustomersPage",
-        ),
-      },
-      {
-        path: "customers/:id",
-        lazy: page(
-          () => import("@/pages/customer/CustomerPage"),
-          "CustomerPage",
-        ),
-      },
-      {
-        path: "model",
-        lazy: page(() => import("@/pages/model/ModelPage"), "ModelPage"),
-      },
-      {
-        path: "source",
-        lazy: page(() => import("@/pages/source/SourcePage"), "SourcePage"),
-      },
+      { path: "*", element: <NotFoundPage /> },
     ],
   },
-  { path: "*", element: <Navigate to="/" replace /> },
 ]);

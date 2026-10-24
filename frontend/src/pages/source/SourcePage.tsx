@@ -58,6 +58,7 @@ export function SourcePage() {
         headers: { "Idempotency-Key": crypto.randomUUID() },
       }),
     onSuccess: (accepted) => setJobId(accepted.jobId),
+    meta: { inlineError: true },
   });
 
   const result =

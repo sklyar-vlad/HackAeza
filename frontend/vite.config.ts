@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 const api = process.env.API_URL ?? "http://localhost:8081";
 const swagger = process.env.SWAGGER_URL ?? "http://localhost:8080";
@@ -20,6 +20,7 @@ export default defineConfig({
       },
     },
   ],
+  test: { environment: "happy-dom" },
   server: {
     proxy: {
       "/api/v1/openapi.yaml": {

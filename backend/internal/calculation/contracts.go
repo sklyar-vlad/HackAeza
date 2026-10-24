@@ -10,11 +10,13 @@ import (
 )
 
 type Run struct {
+	Kind     entity.JobKind
 	Lease    jobs.Lease
 	Base     entity.Calculation
 	Target   entity.Calculation
 	Settings entity.ModelSettings
 	Counts   entity.SourceCounts
+	Warnings []entity.ImportWarning
 }
 
 type Repository interface {

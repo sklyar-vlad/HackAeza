@@ -3,8 +3,6 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
-COPY testdata/data.json /app/testdata/data.json
-COPY swagger/assets /app/swagger/assets
 RUN npm run build
 
 FROM nginx:1.28-alpine

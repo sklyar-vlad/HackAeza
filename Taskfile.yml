@@ -8,12 +8,15 @@ tasks:
 
   env:
     cmds:
-      - test -e infra/.env || cp infra/.env.example infra/.env
+      - bash scripts/setup-env.sh
 
   up:
-    deps: [env]
     cmds:
-      - docker compose --env-file infra/.env -f infra/compose.yaml up -d --build --wait
+      - bash scripts/up.sh
+
+  up:vps:
+    cmds:
+      - bash scripts/up.sh vps
 
   down:
     deps: [env]

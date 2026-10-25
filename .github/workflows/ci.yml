@@ -115,19 +115,10 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts" \
             "$VPS_USER@$VPS_HOST" "bash -se -- '$GITHUB_SHA'" <<'DEPLOY'
           set -euo pipefail
-          cd /srv/HackAeza-dev
+          cd /srv/HackAeza
           git diff --quiet
           git diff --cached --quiet
           git fetch origin main
           git switch --detach "$1"
-          if [ ! -f infra/.env ]; then
-            if [ -f .env ]; then
-              mv .env infra/.env
-            else
-              cp infra/.env.example infra/.env
-            fi
-          fi
-          docker compose --env-file infra/.env -f infra/compose.yaml -p hackaeza config --quiet
-          docker compose --env-file infra/.env -f infra/compose.yaml -p hackaeza build
-          docker compose --env-file infra/.env -f infra/compose.yaml -p hackaeza up -d --no-build --wait --wait-timeout 120
+          bash scripts/up.sh vps
           DEPLOY

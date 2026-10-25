@@ -4,10 +4,13 @@ cd "$(dirname "$0")/.."
 umask 077
 
 if [[ ! -f infra/.env ]]; then
-    cp infra/.env.example infra/.env
+    if [[ -f .env ]]; then
+        mv .env infra/.env
+    else
+        cp infra/.env.example infra/.env
+    fi
 fi
 
-# Keep existing settings. Generate a database password only when none is configured.
 if ! grep -Eq '^POSTGRES_PASSWORD=.+$' infra/.env; then
     auth_db_password=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
     auth_env_tmp=$(mktemp infra/.env.tmp.XXXXXX)

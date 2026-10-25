@@ -110,6 +110,8 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > "$ssh_key"
           printf '%s\n' "$VPS_KNOWN_HOSTS" > "$known_hosts"
 
+          ssh-keygen -y -P '' -f "$ssh_key" | ssh-keygen -lf -
+
           ssh -i "$ssh_key" -p "$VPS_PORT" \
             -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts" \

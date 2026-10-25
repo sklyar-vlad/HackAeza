@@ -8,13 +8,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/jobs"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/metrics"
 	"go.uber.org/zap"
 )
 
 func NewRouter(logger *zap.Logger, pool *pgxpool.Pool) *gin.Engine {
 	router := gin.New()
 	router.HandleMethodNotAllowed = true
-	router.Use(RequestID, func(c *gin.Context) {
+	router.Use(RequestID, metrics.Observe, func(c *gin.Context) {
 		started := time.Now()
 		c.Next()
 		fields := []zap.Field{

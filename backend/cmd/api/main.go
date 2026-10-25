@@ -19,8 +19,10 @@ import (
 	"github.com/sklyar-vlad/HackAeza/backend/internal/auth"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/config"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/customers"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/events"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/handler"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/jobs"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/metrics"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/model"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/migrations"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/postgres"
@@ -101,6 +103,14 @@ func run(logger *zap.Logger) error {
 	customers.NewHandler(customers.NewService(customers.NewRepository(pool, cache))).Register(api)
 	analytics.NewHandler(analytics.NewService(analytics.NewRepository(pool, cache))).Register(api)
 	model.NewHandler(model.NewService(model.NewRepository(pool, queue))).Register(api)
+	hub := events.NewHub(pool, logger)
+	go hub.Run(ctx)
+	api.GET("/events", hub.Handler(func(_ context.Context, token string) error {
+		checkCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, err := service.Authenticate(checkCtx, token)
+		return err
+	}))
 
 	router.GET("/readyz", func(c *gin.Context) {
 		probeCtx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
@@ -118,6 +128,7 @@ func run(logger *zap.Logger) error {
 	authHandler.Register(public, protected)
 	protected.Handle("/", router)
 	public.Handle("/api/v1/", authHandler.RequireAuth(protected))
+	public.Handle("GET /metrics", metrics.Handler(pool, os.Getenv("METRICS_TOKEN"), logger))
 	public.Handle("/", router)
 	cleanupCtx, cancelCleanup := context.WithCancel(ctx)
 	defer cancelCleanup()

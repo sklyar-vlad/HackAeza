@@ -7,17 +7,49 @@ tasks:
       - go run ./cmd/api
 
   env:
+    silent: true
     cmds:
-      - bash scripts/setup-env.sh
+      - |
+        sh <<'SH'
+        set -eu
+        umask 077
+        if [ ! -f infra/.env ]; then
+          if [ -f .env ]; then
+            mv .env infra/.env
+          else
+            cp infra/.env.example infra/.env
+          fi
+        fi
+        ensure_env() {
+          auth_key="$1"
+          auth_value="${2:-}"
+          if grep -Eq "^${auth_key}=.+$" infra/.env; then
+            return
+          fi
+          if [ -z "$auth_value" ]; then
+            auth_value=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
+          fi
+          sed -i "/^${auth_key}=/d" infra/.env
+          printf '\n%s=%s\n' "$auth_key" "$auth_value" >> infra/.env
+        }
+        ensure_env POSTGRES_PASSWORD
+        ensure_env ADMIN_USERNAME admin
+        ensure_env ADMIN_PASSWORD
+        ensure_env METRICS_TOKEN
+        chmod 600 infra/.env
+        printf 'infra/.env готов. Данные входа: ADMIN_USERNAME и ADMIN_PASSWORD.\n'
+        SH
 
   up:
+    deps: [env]
     cmds:
-      - bash scripts/up.sh
+      - docker compose --env-file infra/.env -f infra/compose.yaml -p hackaeza up -d --build --wait --wait-timeout 180
 
   vps-up:
     aliases: [up:vps]
+    deps: [env]
     cmds:
-      - bash scripts/up.sh vps
+      - docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.vps.yaml -p hackaeza up -d --build --wait --wait-timeout 180
 
   down:
     deps: [env]
@@ -55,7 +87,7 @@ tasks:
     desc: Откатить одну миграцию Goose
     deps: [env]
     cmds:
-      - docker compose --env-file infra/.env -f infra/compose.yaml stop frontend swagger backend
+      - docker compose --env-file infra/.env -f infra/compose.yaml stop frontend swagger backend worker
       - docker compose --env-file infra/.env -f infra/compose.yaml up -d --wait postgres
       - docker compose --env-file infra/.env -f infra/compose.yaml run --rm --build --no-deps -T goose down
 

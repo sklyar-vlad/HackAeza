@@ -2,6 +2,7 @@
 .env.*
 !.env.example
 node_modules/
+.vscode/
 frontend/dist/
 testdata/*
 !testdata/data.json

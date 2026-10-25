@@ -22,6 +22,7 @@ import (
 	"github.com/sklyar-vlad/HackAeza/backend/internal/events"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/handler"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/jobs"
+	"github.com/sklyar-vlad/HackAeza/backend/internal/metrics"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/model"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/migrations"
 	"github.com/sklyar-vlad/HackAeza/backend/internal/platform/postgres"
@@ -127,6 +128,7 @@ func run(logger *zap.Logger) error {
 	authHandler.Register(public, protected)
 	protected.Handle("/", router)
 	public.Handle("/api/v1/", authHandler.RequireAuth(protected))
+	public.Handle("GET /metrics", metrics.Handler(pool, os.Getenv("METRICS_TOKEN"), logger))
 	public.Handle("/", router)
 	cleanupCtx, cancelCleanup := context.WithCancel(ctx)
 	defer cancelCleanup()

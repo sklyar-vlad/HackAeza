@@ -854,7 +854,10 @@ paths:
         = summary.loss.amountCents / 100. При отсутствии денежной оценки значение NaN, а churn_loss_estimate_available=0;
         отсутствие оценки не подменяется нулевым риском. churn_calculation_version согласован с calculation.version
         API. В labels нет email или customer ID. Сборщик использует отдельный Bearer-токен METRICS_TOKEN; интерактивный
-        вход ему не нужен.'
+        вход ему не нужен; без настроенного METRICS_TOKEN endpoint отвечает 403. Дополнительно отдаются
+        churn_calculation_age_seconds (задержка обновления), churn_services{scope}, churn_jobs{kind,status},
+        churn_metrics_scrape_error, http_requests_total и http_request_duration_seconds по маршрутам API, а также
+        стандартные метрики Go-процесса.'
       x-required-by-case: true
       responses:
         '200':

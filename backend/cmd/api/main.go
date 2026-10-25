@@ -85,7 +85,7 @@ func run(logger *zap.Logger) error {
 	if err != nil {
 		return err
 	}
-	authHandler := auth.NewHandler(service, slog.Default())
+	authHandler := auth.NewHandler(service, auth.NewAeza(auth.AezaConfigFromEnv(), users, service), slog.Default())
 
 	gin.SetMode(gin.ReleaseMode)
 	router := handler.NewRouter(logger, pool)

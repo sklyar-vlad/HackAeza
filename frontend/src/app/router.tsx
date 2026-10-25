@@ -29,6 +29,13 @@ export const router = createBrowserRouter([
         lazy: page(() => import("@/pages/login/LoginPage"), "LoginPage"),
       },
       {
+        path: "/login/callback",
+        lazy: page(
+          () => import("@/pages/login/OidcCallbackPage"),
+          "OidcCallbackPage",
+        ),
+      },
+      {
         element: (
           <Protected>
             <AppLayout />

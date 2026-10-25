@@ -89,7 +89,8 @@
   border-top: 4px solid var(--card);
 }
 
-.links a {
+.links a,
+.links .sso {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -100,7 +101,8 @@
   transition: opacity 0.2s ease;
 }
 
-.links a:hover {
+.links a:hover,
+.links .sso:hover {
   opacity: 0.7;
 }
 
@@ -133,4 +135,14 @@
   .mark {
     display: none;
   }
+}
+
+.links .sso {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
 }

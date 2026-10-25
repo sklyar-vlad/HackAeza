@@ -4,13 +4,14 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Navigate, useNavigate } from "react-router";
 import type { z } from "zod";
-import { useLogin } from "@/shared/api/generated/api";
+import { useGetAuthConfig, useLogin } from "@/shared/api/generated/api";
 import { LoginBody } from "@/shared/api/generated/zod";
 import { ApiError } from "@/shared/api/http";
 import { usePrefs, useSession } from "@/shared/model/session";
 import { Icon } from "@/shared/ui/Icon";
 import { Logo, Mark } from "@/shared/ui/Logo";
 import styles from "./LoginPage.module.css";
+import { startOidc } from "./oidc";
 
 type Form = z.infer<typeof LoginBody>;
 
@@ -27,6 +28,10 @@ export function LoginPage() {
   const { theme, toggleTheme } = usePrefs();
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+  const { data: authConfig } = useGetAuthConfig({
+    query: { meta: { inlineError: true } },
+  });
+  const oidc = authConfig?.oidc.enabled ? authConfig.oidc : null;
   const login = useLogin({ mutation: { meta: { inlineError: true } } });
   const queryClient = useQueryClient();
   const {
@@ -127,6 +132,16 @@ export function LoginPage() {
           </form>
 
           <div className={styles.links}>
+            {oidc && (
+              <button
+                type="button"
+                className={styles.sso}
+                onClick={() => startOidc(oidc)}
+              >
+                войти через аккаунт aéza
+                <Icon name="external" />
+              </button>
+            )}
             <a href="/api/v1/docs" target="_blank" rel="noopener">
               документация api
               <Icon name="external" />

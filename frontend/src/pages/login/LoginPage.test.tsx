@@ -36,7 +36,10 @@ describe("LoginPage", () => {
     fill("analyst", "secret");
 
     expect(await screen.findByText("главная")).toBeTruthy();
-    expect(calls[0].body).toEqual({ username: "analyst", password: "secret" });
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({
+      username: "analyst",
+      password: "secret",
+    });
     expect(useSession.getState()).toMatchObject({
       token: "session-1",
       username: "analyst",
@@ -65,6 +68,32 @@ describe("LoginPage", () => {
     fill("", "");
 
     expect(await screen.findByText("Введите логин и пароль")).toBeTruthy();
-    expect(calls).toHaveLength(0);
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+  });
+
+  it("offers sign-in with an aéza account when it is configured", async () => {
+    stubApi({
+      "GET /api/v1/auth/config": () => [
+        200,
+        {
+          passwordEnabled: true,
+          oidc: {
+            enabled: true,
+            issuer: "https://my.aeza.net",
+            clientId: "risk-panel",
+            redirectUri: "https://panel.test/login/callback",
+            scopes: ["user:read"],
+            authorizationEndpoint: "https://my.aeza.net/oauth/authorize",
+            responseType: "token",
+            provider: "aeza",
+          },
+        },
+      ],
+    });
+    renderRoute(<LoginPage />, "/login");
+
+    expect(
+      await screen.findByRole("button", { name: "войти через аккаунт aéza" }),
+    ).toBeTruthy();
   });
 });

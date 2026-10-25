@@ -39,11 +39,15 @@ func (p *Postgres) CommitCtx(ctx context.Context, token string, data []byte, exp
 	if !ok || userID == "" {
 		return errors.New("session has no user")
 	}
+	provider, _ := values["provider"].(string)
+	if provider != "oidc" {
+		provider = "password"
+	}
 	result, err := p.pool.Exec(ctx, `INSERT INTO auth_sessions
 		(token_hash, user_id, auth_provider, expires_at, session_data)
-		VALUES ($1, $2, 'password', $3, $4)
+		VALUES ($1, $2, $5, $3, $4)
 		ON CONFLICT (token_hash) DO UPDATE SET session_data = EXCLUDED.session_data, expires_at = EXCLUDED.expires_at
-		WHERE auth_sessions.revoked_at IS NULL`, hash, userID, expiry, data)
+		WHERE auth_sessions.revoked_at IS NULL`, hash, userID, expiry, data, provider)
 	if err == nil && result.RowsAffected() == 0 {
 		return errors.New("cannot save revoked session")
 	}

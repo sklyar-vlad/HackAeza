@@ -100,6 +100,15 @@ services:
       HTTP_PORT: ${HTTP_PORT:-8081}
       AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-8h}
       REDIS_URL: ${REDIS_URL-redis://redis:6379/0}
+      AEZA_OAUTH_CLIENT_ID: ${AEZA_OAUTH_CLIENT_ID:-}
+      AEZA_OAUTH_CLIENT_SECRET: ${AEZA_OAUTH_CLIENT_SECRET:-}
+      AEZA_OAUTH_REDIRECT_URI: ${AEZA_OAUTH_REDIRECT_URI:-}
+      AEZA_OAUTH_RESPONSE_TYPE: ${AEZA_OAUTH_RESPONSE_TYPE:-token}
+      AEZA_OAUTH_SCOPE: ${AEZA_OAUTH_SCOPE:-user:read}
+      AEZA_OAUTH_TOKEN_URL: ${AEZA_OAUTH_TOKEN_URL:-}
+      AEZA_OAUTH_AUTHORIZE_URL: ${AEZA_OAUTH_AUTHORIZE_URL:-https://my.aeza.net/oauth/authorize}
+      AEZA_API_URL: ${AEZA_API_URL:-https://my.aeza.net/api/v2}
+      AEZA_OAUTH_ALLOWED_EMAILS: ${AEZA_OAUTH_ALLOWED_EMAILS:-}
     depends_on:
       goose:
         condition: service_completed_successfully

@@ -67,10 +67,54 @@ export const GetAuthConfigResponse = zod.object({
         .describe("Идентификатор публичного SPA-клиента; не client secret."),
       redirectUri: zod.url().optional(),
       scopes: zod.array(zod.string()).optional(),
+      authorizationEndpoint: zod
+        .url()
+        .optional()
+        .describe(
+          "Адрес страницы входа провайдера, куда фронт перенаправляет пользователя.",
+        ),
+      responseType: zod
+        .enum(["code", "token"])
+        .optional()
+        .describe("OAuth response_type для перехода на authorizationEndpoint."),
+      provider: zod
+        .string()
+        .optional()
+        .describe("Идентификатор провайдера для подписи кнопки входа."),
     })
     .describe(
       "При enabled=true обязательны issuer, clientId, redirectUri и scopes. OIDC необязателен; при enabled=false issuer, clientId, redirectUri и scopes могут отсутствовать.",
     ),
+});
+
+/**
+ * Дополнительный endpoint. После перехода на authorizationEndpoint провайдер (my.aeza.net) возвращает пользователя на redirectUri с access_token (responseType=token) или code (responseType=code). Фронт сверяет state и передаёт сюда ровно одно из полей. Code обменивается на токен на сервере, если настроен адрес обмена. API проверяет токен запросом GET /api/v2/accounts/me у aéza и пускает только активные аккаунты, чей email есть в списке разрешённых на сервере; регистрации нет. В ответ выдаётся обычная сессия приложения с authProvider=oidc, токен aéza не сохраняется.
+ * @summary Завершение входа через аккаунт aéza
+ */
+export const CompleteOidcLoginBody = zod.object({
+  code: zod.string().optional().describe("Код авторизации из redirectUri."),
+  accessToken: zod
+    .string()
+    .optional()
+    .describe("Токен доступа aéza из redirectUri."),
+});
+
+export const CompleteOidcLoginResponse = zod.object({
+  accessToken: zod
+    .string()
+    .min(1)
+    .describe(
+      "Токен сессии приложения. В Swagger Authorize вводится без префикса Bearer.",
+    ),
+  tokenType: zod.enum(["Bearer"]),
+  expiresAt: zod.iso
+    .datetime({ offset: true })
+    .describe("Дата и время с часовым поясом; ответы в UTC."),
+  user: zod.object({
+    id: zod.string(),
+    username: zod.string(),
+    authProvider: zod.enum(["password", "oidc"]),
+  }),
 });
 
 /**

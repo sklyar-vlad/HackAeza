@@ -337,6 +337,17 @@ export interface LoginResponse {
 }
 
 /**
+ * OAuth response_type для перехода на authorizationEndpoint.
+ */
+export type AuthConfigOidcResponseType =
+  (typeof AuthConfigOidcResponseType)[keyof typeof AuthConfigOidcResponseType];
+
+export const AuthConfigOidcResponseType = {
+  code: "code",
+  token: "token",
+} as const;
+
+/**
  * При enabled=true обязательны issuer, clientId, redirectUri и scopes. OIDC необязателен; при enabled=false issuer, clientId, redirectUri и scopes могут отсутствовать.
  */
 export type AuthConfigOidc = {
@@ -347,6 +358,12 @@ export type AuthConfigOidc = {
   clientId?: string;
   redirectUri?: string;
   scopes?: string[];
+  /** Адрес страницы входа провайдера, куда фронт перенаправляет пользователя. */
+  authorizationEndpoint?: string;
+  /** OAuth response_type для перехода на authorizationEndpoint. */
+  responseType?: AuthConfigOidcResponseType;
+  /** Идентификатор провайдера для подписи кнопки входа. */
+  provider?: string;
 };
 
 export interface AuthConfig {
@@ -873,6 +890,13 @@ export type UnavailableResponse = ErrorResponse;
  * Рекомендуется для PATCH settings и PUT snapshot. Ключ уникален в области авторизованного пользователя и набора данных. Повтор того же метода, пути и содержимого запроса с этим ключом возвращает первоначальный 202 с тем же jobId и не создаёт новое задание, даже если оно уже завершено. Другое содержимое, метод или путь с тем же ключом дают 409. Запись ключа, кандидата и задания атомарна; ключ хранится не менее 24 часов после приёма и до завершения задания, если оно длится дольше. После истечения срока ключ может создать новое задание. Клиент создаёт новый ключ для нового действия и повторяет прежний при потере ответа.
  */
 export type IdempotencyKeyParameter = string;
+
+export type CompleteOidcLoginBody = {
+  /** Код авторизации из redirectUri. */
+  code?: string;
+  /** Токен доступа aéza из redirectUri. */
+  accessToken?: string;
+};
 
 export type ListCustomersParams = {
   /**
@@ -1519,6 +1543,144 @@ export function useGetAuthConfig<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+export const getCompleteOidcLoginUrl = () => {
+  return `/api/v1/auth/oidc/callback`;
+};
+
+/**
+ * Дополнительный endpoint. После перехода на authorizationEndpoint провайдер (my.aeza.net) возвращает пользователя на redirectUri с access_token (responseType=token) или code (responseType=code). Фронт сверяет state и передаёт сюда ровно одно из полей. Code обменивается на токен на сервере, если настроен адрес обмена. API проверяет токен запросом GET /api/v2/accounts/me у aéza и пускает только активные аккаунты, чей email есть в списке разрешённых на сервере; регистрации нет. В ответ выдаётся обычная сессия приложения с authProvider=oidc, токен aéza не сохраняется.
+ * @summary Завершение входа через аккаунт aéza
+ */
+export const completeOidcLogin = async (
+  completeOidcLoginBody: CompleteOidcLoginBody,
+  options?: Parameters<typeof http>[1],
+): Promise<LoginResponse> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit["headers"]>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<
+      string | readonly string[] | undefined
+    >(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return http<LoginResponse>(getCompleteOidcLoginUrl(), {
+    ...options,
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...getHeaders(options?.headers),
+    },
+    body: JSON.stringify(completeOidcLoginBody),
+  });
+};
+
+export const getCompleteOidcLoginMutationKey = () =>
+  ["completeOidcLogin"] as const;
+
+export const getCompleteOidcLoginMutationOptions = <
+  TError =
+    | BadRequestResponse
+    | UnauthorizedResponse
+    | ForbiddenResponse
+    | NotFoundResponse
+    | TooManyRequestsResponse
+    | UnavailableResponse,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completeOidcLogin>>,
+    TError,
+    CompleteOidcLoginMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof http>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof completeOidcLogin>>,
+  TError,
+  CompleteOidcLoginMutationVariables,
+  TContext
+> => {
+  const mutationKey = getCompleteOidcLoginMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof completeOidcLogin>>,
+    CompleteOidcLoginMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return completeOidcLogin(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CompleteOidcLoginMutationResult = NonNullable<
+  Awaited<ReturnType<typeof completeOidcLogin>>
+>;
+export type CompleteOidcLoginMutationBody = CompleteOidcLoginBody;
+export type CompleteOidcLoginMutationError =
+  | BadRequestResponse
+  | UnauthorizedResponse
+  | ForbiddenResponse
+  | NotFoundResponse
+  | TooManyRequestsResponse
+  | UnavailableResponse;
+export type CompleteOidcLoginMutationVariables = {
+  data: CompleteOidcLoginBody;
+};
+
+/**
+ * @summary Завершение входа через аккаунт aéza
+ */
+export const useCompleteOidcLogin = <
+  TError =
+    | BadRequestResponse
+    | UnauthorizedResponse
+    | ForbiddenResponse
+    | NotFoundResponse
+    | TooManyRequestsResponse
+    | UnavailableResponse,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof completeOidcLogin>>,
+      TError,
+      CompleteOidcLoginMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof http>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof completeOidcLogin>>,
+  TError,
+  CompleteOidcLoginMutationVariables,
+  TContext
+> => {
+  return useMutation(getCompleteOidcLoginMutationOptions(options), queryClient);
+};
 
 export const getListCustomersUrl = (params?: ListCustomersParams) => {
   const normalizedParams = new URLSearchParams();

@@ -17,35 +17,40 @@ import (
 
 type Handler struct {
 	service *Service
+	aeza    *Aeza
 	logger  *slog.Logger
 	limiter *httprate.RateLimiter
 }
 
-func NewHandler(service *Service, logger *slog.Logger) *Handler {
-	return &Handler{service, logger, httprate.NewRateLimiter(10, time.Minute, httprate.WithLimitHandler(rateLimited))}
+func NewHandler(service *Service, aeza *Aeza, logger *slog.Logger) *Handler {
+	return &Handler{service, aeza, logger, httprate.NewRateLimiter(10, time.Minute, httprate.WithLimitHandler(rateLimited))}
+}
+
+func byPeer(r *http.Request) (string, error) {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return host, nil
 }
 
 // Register leaves login/config public and installs identity handlers on the protected API mux.
 func (h *Handler) Register(public, protected *http.ServeMux) {
 	login := http.NewServeMux()
-	login.Handle("POST /api/v1/auth/login", httprate.LimitBy(60, time.Minute,
-		func(r *http.Request) (string, error) {
-			// Use the TCP peer; never trust arbitrary forwarded headers from direct clients.
-			host, _, err := net.SplitHostPort(r.RemoteAddr)
-			if err != nil {
-				host = r.RemoteAddr
-			}
-			return host, nil
-		}, httprate.WithLimitHandler(rateLimited))(http.HandlerFunc(h.login)))
+	// Use the TCP peer; never trust arbitrary forwarded headers from direct clients.
+	login.Handle("POST /api/v1/auth/login", httprate.LimitBy(60, time.Minute, byPeer,
+		httprate.WithLimitHandler(rateLimited))(http.HandlerFunc(h.login)))
 	public.Handle("/api/v1/auth/login", login)
+	callback := http.NewServeMux()
+	callback.Handle("POST /api/v1/auth/oidc/callback", httprate.LimitBy(30, time.Minute, byPeer,
+		httprate.WithLimitHandler(rateLimited))(http.HandlerFunc(h.oidcCallback)))
+	public.Handle("/api/v1/auth/oidc/callback", callback)
 	config := http.NewServeMux()
 	config.HandleFunc("GET /api/v1/auth/config", func(w http.ResponseWriter, r *http.Request) {
 		JSON(w, r, http.StatusOK, struct {
-			PasswordEnabled bool `json:"passwordEnabled"`
-			OIDC            struct {
-				Enabled bool `json:"enabled"`
-			} `json:"oidc"`
-		}{PasswordEnabled: true})
+			PasswordEnabled bool       `json:"passwordEnabled"`
+			OIDC            OIDCConfig `json:"oidc"`
+		}{PasswordEnabled: true, OIDC: h.aeza.PublicConfig()})
 	})
 	public.Handle("/api/v1/auth/config", config)
 	protected.HandleFunc("GET /api/v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
@@ -95,6 +100,31 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	JSON(w, r, http.StatusOK, response)
+}
+
+func (h *Handler) oidcCallback(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Code        string `json:"code"`
+		AccessToken string `json:"accessToken"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || (input.Code == "") == (input.AccessToken == "") {
+		Error(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Передайте code или accessToken от aéza")
+		return
+	}
+	response, err := h.aeza.Login(r.Context(), input.Code, input.AccessToken)
+	switch {
+	case errors.Is(err, ErrOIDCDisabled):
+		Error(w, r, http.StatusNotFound, "NOT_FOUND", "Вход через aéza не настроен")
+	case errors.Is(err, ErrOIDCForbidden):
+		Error(w, r, http.StatusForbidden, "FORBIDDEN", "Этому аккаунту aéza не открыт доступ к панели")
+	case errors.Is(err, ErrUnauthorized):
+		unauthorized(w, r)
+	case err != nil:
+		h.unavailable(w, r, err)
+	default:
+		JSON(w, r, http.StatusOK, response)
+	}
 }
 
 func (h *Handler) RequireAuth(next http.Handler) http.Handler {

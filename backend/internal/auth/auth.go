@@ -84,13 +84,18 @@ func (s *Service) Login(ctx context.Context, username, password string) (LoginRe
 	if err != nil || passwordErr != nil || len(password) > MaxPasswordBytes {
 		return LoginResponse{}, ErrUnauthorized
 	}
+	return s.startSession(ctx, account)
+}
+
+func (s *Service) startSession(ctx context.Context, account Account) (LoginResponse, error) {
 	// Ignore any incoming session on login. SCS creates a fresh unpredictable token.
-	ctx, err = s.sessions.Load(ctx, "")
+	ctx, err := s.sessions.Load(ctx, "")
 	if err != nil {
 		return LoginResponse{}, fmt.Errorf("create session: %w", err)
 	}
 	s.sessions.Put(ctx, "userID", account.ID)
 	s.sessions.Put(ctx, "version", account.Version)
+	s.sessions.Put(ctx, "provider", account.AuthProvider)
 	token, expiresAt, err := s.sessions.Commit(ctx)
 	if err != nil {
 		return LoginResponse{}, fmt.Errorf("save session: %w", err)

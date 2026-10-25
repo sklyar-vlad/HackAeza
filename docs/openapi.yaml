@@ -135,6 +135,52 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
       security: []
+  /api/v1/auth/oidc/callback:
+    post:
+      operationId: completeOidcLogin
+      tags:
+      - Auth
+      summary: Завершение входа через аккаунт aéza
+      description: 'Дополнительный endpoint. После перехода на authorizationEndpoint провайдер (my.aeza.net)
+        возвращает пользователя на redirectUri с access_token (responseType=token) или code (responseType=code).
+        Фронт сверяет state и передаёт сюда ровно одно из полей. Code обменивается на токен на сервере, если
+        настроен адрес обмена. API проверяет токен запросом GET /api/v2/accounts/me у aéza и пускает только
+        активные аккаунты, чей email есть в списке разрешённых на сервере; регистрации нет. В ответ выдаётся
+        обычная сессия приложения с authProvider=oidc, токен aéza не сохраняется.'
+      x-required-by-case: false
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  description: Код авторизации из redirectUri.
+                accessToken:
+                  type: string
+                  description: Токен доступа aéza из redirectUri.
+      responses:
+        '200':
+          description: Сессия приложения создана.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /api/v1/customers:
     get:
       operationId: listCustomers
@@ -1262,6 +1308,21 @@ components:
               - openid
               - profile
               - email
+            authorizationEndpoint:
+              type: string
+              format: uri
+              description: Адрес страницы входа провайдера, куда фронт перенаправляет пользователя.
+              example: https://my.aeza.net/oauth/authorize
+            responseType:
+              type: string
+              description: OAuth response_type для перехода на authorizationEndpoint.
+              enum:
+              - code
+              - token
+            provider:
+              type: string
+              description: Идентификатор провайдера для подписи кнопки входа.
+              example: aeza
           description: При enabled=true обязательны issuer, clientId, redirectUri и scopes. OIDC необязателен;
             при enabled=false issuer, clientId, redirectUri и scopes могут отсутствовать.
     Calculation:

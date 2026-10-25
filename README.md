@@ -1,10 +1,16 @@
 # HackAeza
 
-Локальный запуск: `bash scripts/up.sh` → http://aeza.localhost.
+Требуются Git, Docker с Compose и Task. Команды выполняются из корня клонированного репозитория пользователем с доступом к Docker.
 
-Запуск на VPS: `bash scripts/up.sh vps` → https://aeza.fabulosus.online.
+Локальный запуск: `task up` → http://aeza.localhost.
+
+Запуск на VPS: `task vps-up` → https://aeza.fabulosus.online.
 
 Команда создаёт `infra/.env`, собирает контейнеры, применяет миграции и дожидается готовности сервисов. Существующие настройки и данные сохраняются.
+
+Учётная запись: `ADMIN_USERNAME` и `ADMIN_PASSWORD` в `infra/.env`. При первом запуске генерируется случайный пароль. При изменении пароля в `.env` и повторном запуске пароль учётной записи обновляется, её прежние сессии отзываются. Повторный запуск с тем же паролем сохраняет сессии.
+
+Чтобы задать свой логин и пароль до запуска, выполните `task env` и отредактируйте `ADMIN_USERNAME` и `ADMIN_PASSWORD` в `infra/.env`. Пароль — от 12 до 72 байт. Файл `.env` исключён из Git и Docker build context; реальные пароли хранятся только на машине запуска.
 
 Документация: `/docs/`, Swagger UI: `/api/v1/docs`, OpenAPI: `/api/v1/openapi.yaml`.
 

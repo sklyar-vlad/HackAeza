@@ -14,7 +14,8 @@ tasks:
     cmds:
       - bash scripts/up.sh
 
-  up:vps:
+  vps-up:
+    aliases: [up:vps]
     cmds:
       - bash scripts/up.sh vps
 

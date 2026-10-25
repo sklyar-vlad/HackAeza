@@ -10,6 +10,12 @@ type Config struct {
 	Server   Server
 	Database Database
 	Redis    Redis
+	Admin    Admin
+}
+
+type Admin struct {
+	Username string
+	Password string
 }
 
 type Redis struct{ URL string }
@@ -38,7 +44,10 @@ func NewConfig() Config {
 		URL:            os.Getenv("POSTGRES_URL"),
 		MaxConnections: 10,
 		ConnectTimeout: 5 * time.Second,
-	}, Redis: Redis{URL: os.Getenv("REDIS_URL")}, Server: Server{
+	}, Redis: Redis{URL: os.Getenv("REDIS_URL")}, Admin: Admin{
+		Username: os.Getenv("ADMIN_USERNAME"),
+		Password: os.Getenv("ADMIN_PASSWORD"),
+	}, Server: Server{
 		Port:              port,
 		ReadTimeout:       5 * time.Minute,
 		ReadHeaderTimeout: 5 * time.Second,

@@ -77,6 +77,11 @@ func run(logger *zap.Logger) error {
 	if len(os.Args) > 1 {
 		return manageUser(ctx, users, os.Args[1:])
 	}
+	if cfg.Admin.Password != "" {
+		if err := users.EnsurePassword(startupCtx, cfg.Admin.Username, cfg.Admin.Password); err != nil {
+			return fmt.Errorf("configure admin: %w", err)
+		}
+	}
 	lifetime, err := config.SessionLifetime()
 	if err != nil {
 		return err

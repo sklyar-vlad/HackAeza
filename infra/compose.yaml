@@ -6,7 +6,7 @@ x-postgres-client: &postgres-client
   PGPORT: "5432"
   PGDATABASE: ${POSTGRES_DB:-hackaeza}
   PGUSER: ${POSTGRES_USER:-hackaeza}
-  PGPASSWORD: ${POSTGRES_PASSWORD:-hackaeza-local}
+  PGPASSWORD: ${POSTGRES_PASSWORD:?Run task env to prepare infra/.env}
 
 services:
   traefik:
@@ -49,7 +49,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-hackaeza}
       POSTGRES_USER: ${POSTGRES_USER:-hackaeza}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hackaeza-local}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run task env to prepare infra/.env}
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -99,6 +99,8 @@ services:
       <<: *postgres-client
       HTTP_PORT: ${HTTP_PORT:-8081}
       AUTH_SESSION_TTL: ${AUTH_SESSION_TTL:-8h}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       REDIS_URL: ${REDIS_URL-redis://redis:6379/0}
     depends_on:
       goose:

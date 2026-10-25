@@ -51,3 +51,17 @@ func (p *Postgres) SetPassword(ctx context.Context, username, password string) e
 		SET password_hash = EXCLUDED.password_hash, session_version = app_users.session_version + 1`, username, string(hash))
 	return err
 }
+
+func (p *Postgres) EnsurePassword(ctx context.Context, username, password string) error {
+	if err := ValidateCredentials(username, password); err != nil {
+		return err
+	}
+	account, err := p.ByUsername(ctx, username)
+	if err != nil && !errors.Is(err, ErrUserNotFound) {
+		return err
+	}
+	if err == nil && bcrypt.CompareHashAndPassword(account.PasswordHash, []byte(password)) == nil {
+		return nil
+	}
+	return p.SetPassword(ctx, username, password)
+}

@@ -1,0 +1,152 @@
+<a class="skip" href="#main">К содержимому</a>
+<div class="layout">
+  <aside class="side" id="side" aria-label="Документация">
+    <div class="side-head">
+      <a class="brand" href="./#/" aria-label="aéza — база знаний API">
+        <span class="logo" aria-hidden="true"
+          ><span>a</span><span>é</span><span>z</span><span>a</span></span
+        >
+        <span class="brand-note">база знаний<br />api</span>
+      </a>
+      <button
+        class="menu-btn"
+        id="menu"
+        type="button"
+        aria-label="Меню"
+        aria-expanded="false"
+        aria-controls="side-body"
+      >
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      </button>
+    </div>
+    <div class="side-body" id="side-body">
+      <label class="search">
+        <span class="sr-only">Поиск по API</span>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <path
+            d="M10.36 19.22a8.86 8.86 0 1 0 0-17.72 8.86 8.86 0 0 0 0 17.72zM17 17l4 4"
+          />
+        </svg>
+        <input
+          id="search"
+          type="search"
+          placeholder="Поиск по API"
+          autocomplete="off"
+        />
+        <kbd aria-hidden="true">/</kbd>
+      </label>
+      <nav class="nav" id="nav" aria-label="Разделы API"></nav>
+      <div
+        class="results"
+        id="results"
+        role="list"
+        aria-label="Результаты поиска"
+        hidden
+      ></div>
+      <div class="side-foot">
+        <a class="item" id="mode-link" href="./swagger.html">
+          <span>Swagger UI</span>
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16" />
+          </svg>
+        </a>
+        <a class="item" href="./openapi.yaml" download>
+          <span>Скачать OpenAPI</span>
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path
+              d="M12 3v12M7 10l5 5 5-5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"
+            />
+          </svg>
+        </a>
+        <a class="item" href="/">
+          <span>Вернуться в панель</span>
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </a>
+        <button class="item" id="theme" type="button">
+          <span>Тёмная тема</span>
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+  <main class="sheet" id="main" tabindex="-1">
+    <div class="topbar">
+      <nav class="crumbs" aria-label="Путь">
+        <a href="./#/">База знаний</a><span aria-hidden="true">/</span
+        ><span id="crumb"></span>
+      </nav>
+      <div class="topbar-end">
+        <span class="chip"><span class="dot ok"></span>{{version}}</span>
+        <nav class="segmented" aria-label="Режим документации">
+          <a href="./#/" data-view-link="reference">API Reference</a>
+          <a href="./swagger.html" data-view-link="swagger">Swagger UI</a>
+        </nav>
+      </div>
+    </div>
+    <!-- content -->
+  </main>
+</div>

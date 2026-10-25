@@ -1,0 +1,70 @@
+version: '3'
+
+tasks:
+  backend:run:
+    dir: backend
+    cmds:
+      - go run ./cmd/api
+
+  env:
+    cmds:
+      - test -e infra/.env || cp infra/.env.example infra/.env
+
+  up:
+    deps: [env]
+    cmds:
+      - docker compose --env-file infra/.env -f infra/compose.yaml up -d --build --wait
+
+  down:
+    deps: [env]
+    cmds:
+      - docker compose --env-file infra/.env -f infra/compose.yaml down
+
+  lint:
+    cmds:
+      - cd backend && golangci-lint run --config=../.golangci.yml ./...
+      - npm --prefix frontend run lint
+
+  fmt:
+    cmds:
+      - cd backend && golangci-lint fmt --config=../.golangci.yml ./...
+      - npm --prefix frontend run format
+
+  swagger:up:
+    deps: [env]
+    cmds:
+      - docker compose --env-file infra/.env -f infra/compose.yaml up -d --build swagger
+
+  swagger:down:
+    deps: [env]
+    cmds:
+      - docker compose --env-file infra/.env -f infra/compose.yaml stop swagger
+
+  migrate:up:
+    desc: Применить новые миграции Goose
+    deps: [env]
+    cmds:
+      - docker compose --env-file infra/.env -f infra/compose.yaml up -d --wait postgres
+      - docker compose --env-file infra/.env -f infra/compose.yaml run --rm --build --no-deps -T goose up
+
+  migrate:down:
+    desc: Откатить одну миграцию Goose
+    deps: [env]
+    cmds:
+      - docker compose --env-file infra/.env -f infra/compose.yaml stop frontend swagger backend
+      - docker compose --env-file infra/.env -f infra/compose.yaml up -d --wait postgres
+      - docker compose --env-file infra/.env -f infra/compose.yaml run --rm --build --no-deps -T goose down
+
+  migrate:status:
+    desc: Показать состояние миграций Goose
+    deps: [env]
+    cmds:
+      - docker compose --env-file infra/.env -f infra/compose.yaml up -d --wait postgres
+      - docker compose --env-file infra/.env -f infra/compose.yaml run --rm --build --no-deps -T goose status
+
+  migrate:version:
+    desc: Показать версию схемы Goose
+    deps: [env]
+    cmds:
+      - docker compose --env-file infra/.env -f infra/compose.yaml up -d --wait postgres
+      - docker compose --env-file infra/.env -f infra/compose.yaml run --rm --build --no-deps -T goose version

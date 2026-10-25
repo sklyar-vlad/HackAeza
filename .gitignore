@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+node_modules/
+frontend/dist/
+testdata/*
+!testdata/data.json
+docs/*
+!docs/openapi.yaml
+/frontend-aeza/

@@ -1,0 +1,136 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+}
+
+.cards {
+  display: flex;
+  gap: 16px;
+}
+
+.card {
+  width: 350px;
+  min-height: 540px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px;
+  border-radius: 16px;
+  background: var(--sheet);
+  transition: background-color 0.3s ease;
+}
+
+.title {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 36px;
+  letter-spacing: -0.01em;
+}
+
+.sub {
+  margin-top: 8px;
+  color: var(--mute);
+  font-size: 16px;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.input {
+  height: 54px;
+  padding: 0 16px;
+  background: var(--field-auth);
+  font-size: 16px;
+}
+
+.password {
+  position: relative;
+}
+
+.password .input {
+  padding-right: 52px;
+}
+
+.eye {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--mute);
+  cursor: pointer;
+}
+
+.submit {
+  height: 54px;
+  font-size: 16px;
+}
+
+.links {
+  padding-top: 24px;
+  border-top: 4px solid var(--card);
+}
+
+.links a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  color: var(--faint);
+  font-size: 16px;
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+}
+
+.links a:hover {
+  opacity: 0.7;
+}
+
+.phoneLogo {
+  display: none;
+}
+
+@media (max-width: 739px) {
+  .page {
+    justify-content: flex-start;
+  }
+  .phoneLogo {
+    display: block;
+    padding-top: 8px;
+  }
+  .cards {
+    flex-direction: column;
+    gap: 0;
+    width: 100%;
+    max-width: 420px;
+    border-radius: 16px;
+    overflow: hidden;
+    background: var(--sheet);
+  }
+  .card {
+    width: auto;
+    min-height: 0;
+    border-radius: 0;
+  }
+  .mark {
+    display: none;
+  }
+}

@@ -1,0 +1,70 @@
+import { fireEvent, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { renderRoute, stubApi } from "@/shared/lib/testing";
+import { useSession } from "@/shared/model/session";
+import { LoginPage } from "./LoginPage";
+
+const fill = (username: string, password: string) => {
+  fireEvent.change(screen.getByLabelText("Логин"), {
+    target: { value: username },
+  });
+  fireEvent.change(screen.getByLabelText("Пароль"), {
+    target: { value: password },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "войти" }));
+};
+
+describe("LoginPage", () => {
+  it("logs in with username and password and opens the panel", async () => {
+    const calls = stubApi({
+      "POST /api/v1/auth/login": () => [
+        200,
+        {
+          accessToken: "session-1",
+          tokenType: "Bearer",
+          expiresAt: "2026-10-25T12:00:00Z",
+          user: {
+            id: "analyst",
+            username: "analyst",
+            authProvider: "password",
+          },
+        },
+      ],
+    });
+    renderRoute(<LoginPage />, "/login");
+
+    fill("analyst", "secret");
+
+    expect(await screen.findByText("главная")).toBeTruthy();
+    expect(calls[0].body).toEqual({ username: "analyst", password: "secret" });
+    expect(useSession.getState()).toMatchObject({
+      token: "session-1",
+      username: "analyst",
+    });
+  });
+
+  it("explains a rejected password", async () => {
+    stubApi({
+      "POST /api/v1/auth/login": () => [
+        401,
+        { error: { code: "UNAUTHORIZED", message: "x", requestId: "r" } },
+      ],
+    });
+    renderRoute(<LoginPage />, "/login");
+
+    fill("analyst", "wrong");
+
+    expect(await screen.findByText("Неверный логин или пароль")).toBeTruthy();
+    expect(useSession.getState().token).toBeNull();
+  });
+
+  it("does not call the API with empty fields", async () => {
+    const calls = stubApi({});
+    renderRoute(<LoginPage />, "/login");
+
+    fill("", "");
+
+    expect(await screen.findByText("Введите логин и пароль")).toBeTruthy();
+    expect(calls).toHaveLength(0);
+  });
+});

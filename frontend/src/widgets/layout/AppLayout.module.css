@@ -1,0 +1,168 @@
+.shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.side {
+  position: sticky;
+  top: 0;
+  flex: 0 0 240px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px 14px;
+}
+
+.group,
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.brand {
+  display: flex;
+  margin: 4px 0 28px 12px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--nav-text);
+  font-size: 14px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.item svg {
+  flex: 0 0 auto;
+  color: var(--nav-icon);
+  transition: color 0.2s ease;
+}
+
+.item:hover {
+  background: var(--hover);
+}
+
+.item[aria-current="page"] {
+  background: var(--nav-active);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.item[aria-current="page"] svg {
+  color: var(--text);
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px 0 0 12px;
+  border-top: 1px solid var(--line);
+  font-weight: 600;
+}
+
+.sheet {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 16px 16px 16px 0;
+  padding: 32px;
+  border-radius: 24px;
+  background: var(--sheet);
+  transition: background-color 0.3s ease;
+}
+
+/* tablet: icon rail */
+@media (max-width: 1099px) {
+  .side {
+    flex-basis: 76px;
+    align-items: center;
+  }
+  .label,
+  .brand {
+    display: none;
+  }
+  .item {
+    justify-content: center;
+    width: 44px;
+    padding: 0;
+  }
+  .account {
+    padding: 12px 0 0;
+  }
+  .sheet {
+    padding: 24px;
+  }
+}
+
+/* phone: top bar with scrolling pills */
+@media (max-width: 639px) {
+  .shell {
+    flex-direction: column;
+  }
+  .side {
+    position: static;
+    height: auto;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px 16px;
+    overflow-x: auto;
+  }
+  .group,
+  .nav {
+    flex-direction: row;
+  }
+  .label {
+    display: inline;
+  }
+  .item {
+    width: auto;
+    height: 40px;
+    padding: 0 14px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .item svg {
+    display: none;
+  }
+  .account {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .account .label {
+    display: none;
+  }
+  .sheet {
+    margin: 0;
+    padding: 16px;
+    border-radius: 24px 24px 0 0;
+  }
+}

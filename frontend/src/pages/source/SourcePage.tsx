@@ -178,7 +178,7 @@ export function SourcePage() {
         </div>
       </div>
 
-      <section className={styles.kpis}>
+      <section className="kpi-row">
         {ENTITIES.map((e) => (
           <div key={e.key} className="card">
             <div className="kpi-label">{e.label}</div>

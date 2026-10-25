@@ -160,6 +160,28 @@ export interface ModelSettings {
   lossFormula: string;
 }
 
+/**
+ * Примерное время полного пересчёта текущего набора. Считается по средней скорости последних успешных заданий сопоставимого объёма (не меньше десятой части текущего числа клиентов). Отсутствует, если снимка нет или подходящих заданий ещё не было. Это ориентир, а не обещание срока.
+ * @nullable
+ */
+export type RecalculationEstimate = {
+  /**
+   * Ожидаемая длительность пересчёта, секунд.
+   * @minimum 1
+   */
+  seconds: number;
+  /**
+   * Число клиентов в текущем снимке.
+   * @minimum 1
+   */
+  customers: number;
+  /**
+   * Сколько завершённых заданий учтено в оценке.
+   * @minimum 1
+   */
+  basedOnJobs: number;
+} | null;
+
 export interface ModelSettingsResponse {
   settings: ModelSettings;
   calculation: Calculation;
@@ -168,6 +190,7 @@ export interface ModelSettingsResponse {
    * @nullable
    */
   pendingJobId?: string | null;
+  recalculationEstimate?: RecalculationEstimate | null;
 }
 
 export interface SourceCounts {

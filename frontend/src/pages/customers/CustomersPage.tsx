@@ -1,3 +1,4 @@
+import { keepPreviousData } from "@tanstack/react-query";
 import { useDeferredValue } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { RISK_LEVELS, riskClass, riskLabel } from "@/entities/risk";
@@ -40,14 +41,17 @@ export function CustomersPage() {
       return next;
     });
 
-  const { data } = useListCustomers({
-    page,
-    pageSize: PAGE_SIZE,
-    search: search || undefined,
-    riskLevel: risk === "all" ? undefined : [risk],
-    sortBy,
-    sortOrder,
-  });
+  const { data } = useListCustomers(
+    {
+      page,
+      pageSize: PAGE_SIZE,
+      search: search || undefined,
+      riskLevel: risk === "all" ? undefined : [risk],
+      sortBy,
+      sortOrder,
+    },
+    { query: { placeholderData: keepPreviousData } },
+  );
   const { data: summary } = useGetAnalyticsSummary();
   const total = data?.pagination.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -124,7 +128,16 @@ export function CustomersPage() {
         </div>
 
         <div className="table-wrap">
-          <table className="table">
+          <table className="table fixed">
+            <colgroup>
+              <col style={{ width: 70 }} />
+              <col style={{ width: "22%" }} />
+              <col style={{ width: 120 }} />
+              <col style={{ width: 120 }} />
+              <col style={{ width: 80 }} />
+              <col />
+              <col style={{ width: 140 }} />
+            </colgroup>
             <thead>
               <tr>
                 {COLUMNS.map((c) => (
@@ -171,7 +184,7 @@ export function CustomersPage() {
                   onClick={() => navigate(`/customers/${c.id}`)}
                 >
                   <td className="num">{c.id}</td>
-                  <td>
+                  <td className="clip" title={c.email}>
                     <Link to={`/customers/${c.id}`}>{c.email}</Link>
                   </td>
                   <td className="right num">{money(c.balance)}</td>
@@ -180,7 +193,10 @@ export function CustomersPage() {
                     <i className="dot" style={{ marginRight: 8 }} />
                     {score(c.risk.score)}
                   </td>
-                  <td className="muted">
+                  <td
+                    className="muted clip"
+                    title={c.risk.reasons.map((r) => r.message).join("; ")}
+                  >
                     {c.risk.reasons.map((r) => r.message).join("; ") || "—"}
                   </td>
                   <td className="right num">{money(c.loss.amountCents)}</td>

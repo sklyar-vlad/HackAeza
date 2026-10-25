@@ -538,6 +538,15 @@ p {
   border-top: 1px solid var(--line);
   vertical-align: middle;
 }
+.table.fixed {
+  min-width: 860px;
+  table-layout: fixed;
+}
+.table .clip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .table .right {
   text-align: right;
 }

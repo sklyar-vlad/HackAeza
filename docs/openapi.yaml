@@ -1803,6 +1803,34 @@ components:
           nullable: true
           description: Текущее queued/running задание изменения модели или полной замены снимка этого набора;
             null при его отсутствии. Поле опционально, но реализация асинхронного режима должна его возвращать.
+        recalculationEstimate:
+          $ref: '#/components/schemas/RecalculationEstimate'
+    RecalculationEstimate:
+      type: object
+      nullable: true
+      required:
+      - seconds
+      - customers
+      - basedOnJobs
+      description: Примерное время полного пересчёта текущего набора. Считается по средней скорости последних
+        успешных заданий сопоставимого объёма (не меньше десятой части текущего числа клиентов). Отсутствует,
+        если снимка нет или подходящих заданий ещё не было. Это ориентир, а не обещание срока.
+      properties:
+        seconds:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Ожидаемая длительность пересчёта, секунд.
+        customers:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Число клиентов в текущем снимке.
+        basedOnJobs:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Сколько завершённых заданий учтено в оценке.
     FeatureDefinition:
       type: object
       required:

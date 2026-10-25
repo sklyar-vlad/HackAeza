@@ -37,9 +37,16 @@ type ModelSettingsPatch struct {
 }
 
 type ModelSettingsResponse struct {
-	Settings     ModelSettings `json:"settings"`
-	Calculation  Calculation   `json:"calculation"`
-	PendingJobID *JobID        `json:"pendingJobId"`
+	Settings     ModelSettings          `json:"settings"`
+	Calculation  Calculation            `json:"calculation"`
+	PendingJobID *JobID                 `json:"pendingJobId"`
+	Estimate     *RecalculationEstimate `json:"recalculationEstimate,omitempty"`
+}
+
+type RecalculationEstimate struct {
+	Seconds   int64 `json:"seconds"`
+	Customers int64 `json:"customers"`
+	BasedOn   int64 `json:"basedOnJobs"`
 }
 
 type FeatureDefinition struct {

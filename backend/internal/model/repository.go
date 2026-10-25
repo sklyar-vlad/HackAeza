@@ -46,7 +46,44 @@ func published(row pgx.Row) (entity.ModelSettingsResponse, error) {
 }
 
 func (r *Postgres) Published(ctx context.Context) (entity.ModelSettingsResponse, error) {
-	return published(r.pool.QueryRow(ctx, publishedSQL))
+	result, err := published(r.pool.QueryRow(ctx, publishedSQL))
+	if err != nil {
+		return result, err
+	}
+	result.Estimate, err = r.estimate(ctx)
+	return result, err
+}
+
+const estimateSQL = `
+	WITH current AS (
+		SELECT coalesce(s.accounts_count, 0) AS customers
+		FROM published_state p
+		LEFT JOIN calculation_versions c ON c.version = p.active_calculation_version
+		LEFT JOIN source_snapshots s ON s.version = c.source_version
+		WHERE p.id = 1
+	), recent AS (
+		SELECT total_customers, extract(epoch FROM finished_at - started_at) AS seconds
+		FROM calculation_jobs
+		WHERE status = 'succeeded' AND total_customers > 0 AND finished_at > started_at
+		ORDER BY finished_at DESC
+		LIMIT 20
+	)
+	SELECT current.customers, count(recent.total_customers),
+		coalesce(ceil(sum(recent.seconds) / nullif(sum(recent.total_customers), 0) * current.customers), 0)::bigint
+	FROM current
+	LEFT JOIN recent ON recent.total_customers * 10 >= current.customers
+	GROUP BY current.customers`
+
+func (r *Postgres) estimate(ctx context.Context) (*entity.RecalculationEstimate, error) {
+	var estimate entity.RecalculationEstimate
+	if err := r.pool.QueryRow(ctx, estimateSQL).Scan(&estimate.Customers, &estimate.BasedOn, &estimate.Seconds); err != nil {
+		return nil, fmt.Errorf("estimate recalculation: %w", err)
+	}
+	if estimate.Customers == 0 || estimate.BasedOn == 0 {
+		return nil, nil
+	}
+	estimate.Seconds = max(estimate.Seconds, 1)
+	return &estimate, nil
 }
 
 func (r *Postgres) Lookup(ctx context.Context, kind entity.JobKind, submission jobs.Submission) (*jobs.Accepted, error) {

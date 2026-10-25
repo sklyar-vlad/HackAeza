@@ -2329,7 +2329,7 @@ components:
               mediumFrom: 35
               highFrom: 70
             horizonDays: 7
-            refreshIntervalSeconds: 60
+            refreshIntervalSeconds: 1800
             scoreFormula: 100 * sum(coefficient * applicableFeatureValue) / sum(applicableCoefficient)
             lossFormula: round(sum(nextRenewalPriceCents * serviceScore / 100))
           calculation:
@@ -2595,7 +2595,7 @@ components:
             mediumFrom: 35
             highFrom: 70
           horizonDays: 7
-          refreshIntervalSeconds: 60
+          refreshIntervalSeconds: 1800
           scoreFormula: 100 * sum(coefficient * applicableFeatureValue) / sum(applicableCoefficient)
           lossFormula: round(sum(nextRenewalPriceCents * serviceScore / 100))
         calculation:

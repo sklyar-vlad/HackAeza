@@ -54,6 +54,9 @@ func (r *PostgresRepository) Prepare(ctx context.Context, lease jobs.Lease, asOf
 			}
 		}
 		asOf = asOf.UTC().Truncate(time.Microsecond)
+		if run.Base.CalculatedAt != nil && asOf.Before(*run.Base.CalculatedAt) {
+			return entity.ErrVersionConflict
+		}
 		err = tx.QueryRow(ctx, `SELECT version, updated_at, coefficients, medium_from, high_from,
 			horizon_days, refresh_interval_seconds, score_formula, loss_formula FROM model_versions WHERE version = $1`, model).
 			Scan(&run.Settings.Version, &run.Settings.UpdatedAt, &run.Settings.Coefficients,
@@ -120,6 +123,39 @@ func checkLease(ctx context.Context, tx pgx.Tx, lease jobs.Lease) error {
 	}
 	if !live {
 		return entity.ErrLeaseLost
+	}
+	return nil
+}
+
+func checkRun(ctx context.Context, tx pgx.Tx, run Run) error {
+	if run.Target.CalculatedAt == nil || run.Settings.Version != run.Target.ModelVersion {
+		return entity.ErrVersionConflict
+	}
+	var valid bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS (
+		SELECT 1 FROM calculation_versions c
+		CROSS JOIN published_state p
+		JOIN calculation_jobs j ON j.id = $1::uuid
+		LEFT JOIN calculation_versions b ON b.version = p.active_calculation_version
+		LEFT JOIN source_snapshots s ON s.version = c.source_version
+		WHERE p.id = 1 AND c.version = $2 AND c.published_at IS NULL
+		AND coalesce(c.source_version, 0) = $3 AND c.model_version = $4 AND c.calculated_at = $5
+		AND coalesce(c.base_version, 0) = $6 AND coalesce(p.active_calculation_version, 0) = $6
+		AND p.active_model_version = $7 AND p.pending_job_id = j.id AND j.kind = $8
+		AND j.base_calculation_version IS NOT DISTINCT FROM c.base_version
+		AND coalesce(j.candidate_source_version, b.source_version, 0) = $3
+		AND coalesce(j.candidate_model_version, p.active_model_version) = $4
+		AND coalesce(s.accounts_count, 0) = $9 AND coalesce(s.services_count, 0) = $10
+		AND coalesce(s.transactions_count, 0) = $11
+		AND coalesce(b.source_version, 0) = $12 AND b.calculated_at IS NOT DISTINCT FROM $13::timestamptz)`,
+		run.Lease.JobID, run.Target.Version, run.Target.SourceVersion, run.Target.ModelVersion, run.Target.CalculatedAt,
+		run.Base.Version, run.Base.ModelVersion, run.Kind, run.Counts.Accounts, run.Counts.Services,
+		run.Counts.Transactions, run.Base.SourceVersion, run.Base.CalculatedAt).Scan(&valid)
+	if err != nil {
+		return err
+	}
+	if !valid {
+		return entity.ErrVersionConflict
 	}
 	return nil
 }

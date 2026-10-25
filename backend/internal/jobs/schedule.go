@@ -23,9 +23,7 @@ func (r *Repository) ScheduleTime(ctx context.Context) (*Accepted, error) {
 			JOIN services v ON v.snapshot_version = c.source_version
 			WHERE s.id = 1 AND v.status IN ('active', 'suspended', 'prolong_wait')
 			AND (
-				c.calculated_at + least(m.refresh_interval_seconds,
-					CASE WHEN v.payment_term = 'hour' THEN 60 ELSE m.refresh_interval_seconds END)
-					* interval '1 second' <= clock_timestamp()
+				c.calculated_at + m.refresh_interval_seconds * interval '1 second' <= clock_timestamp()
 				OR (v.expires_at - m.horizon_days * interval '24 hours' > c.calculated_at
 					AND v.expires_at - m.horizon_days * interval '24 hours' <= clock_timestamp())
 				OR (v.expires_at + interval '1 microsecond' > c.calculated_at

@@ -25,7 +25,7 @@ func NewTimeScheduler(queue TimeQueue, logger *zap.Logger) *TimeScheduler {
 // It only schedules work; the normal coordinator must execute and publish it.
 // Starting it on every worker is safe, including immediately after a restart.
 func (s *TimeScheduler) Run(ctx context.Context) {
-	s.run(ctx, time.Second)
+	s.run(ctx, 30*time.Second)
 }
 
 func (s *TimeScheduler) run(ctx context.Context, interval time.Duration) {

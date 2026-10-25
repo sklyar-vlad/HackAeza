@@ -40,6 +40,13 @@ const title = {
   failed: "Пересчёт не выполнен, прежние данные сохранены",
 };
 
+const scheduledTitle = {
+  queued: "Плановый пересчёт по времени в очереди",
+  running: "Идёт плановый пересчёт по времени",
+  succeeded: "Плановый пересчёт по времени завершён",
+  failed: "Плановый пересчёт не выполнен, прежние данные сохранены",
+};
+
 const icon = {
   queued: "clock",
   running: "clock",
@@ -60,7 +67,13 @@ export function JobNotice({ job }: { job?: CalculationJob }) {
         <Icon name={icon[job.status]} size={18} />
       </span>
       <div className={styles.body}>
-        <strong>{title[job.status]}</strong>
+        <strong>
+          {
+            (job.kind === "time_recalculation" ? scheduledTitle : title)[
+              job.status
+            ]
+          }
+        </strong>
         <span className={styles.meta}>
           {job.status === "queued" &&
             `Ждёт обработчика с ${time(job.createdAt)}`}

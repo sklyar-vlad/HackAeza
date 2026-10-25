@@ -117,6 +117,7 @@ export type CalculationJobKind =
 export const CalculationJobKind = {
   model_settings: "model_settings",
   source_snapshot: "source_snapshot",
+  time_recalculation: "time_recalculation",
 } as const;
 
 /**
@@ -190,6 +191,10 @@ export interface SnapshotResult {
   calculation: Calculation;
 }
 
+export interface TimeRecalculationResult {
+  calculation: Calculation;
+}
+
 /**
  * Для queued/running result и error отсутствуют, finishedAt=null. Для succeeded обязателен result и отсутствует error; для failed обязателен error и отсутствует result. В обоих терминальных состояниях finishedAt задан. Для running startedAt задан и attempt>=1. Восстановление после падения Worker не меняет jobId. Обработка имеет семантику повторных попыток, а публикация — защиту от дублей и устаревшего владельца. Исчерпание ограниченного числа повторов завершает задание как failed.
  */
@@ -214,8 +219,8 @@ export interface CalculationJob {
    */
   attempt: number;
   progress?: JobProgress;
-  /** Только для succeeded. При kind=model_settings содержит ModelSettingsResponse, при kind=source_snapshot — SnapshotResult. Версия в result — результат этого задания, она может быть уже не самой новой при последующих обновлениях. */
-  result?: ModelSettingsResponse | SnapshotResult;
+  /** Только для succeeded. При kind=model_settings содержит ModelSettingsResponse, при kind=source_snapshot — SnapshotResult, при kind=time_recalculation — TimeRecalculationResult. Версия в result — результат этого задания, она может быть уже не самой новой при последующих обновлениях. */
+  result?: ModelSettingsResponse | SnapshotResult | TimeRecalculationResult;
   error?: JobError;
 }
 
@@ -625,6 +630,46 @@ export interface SourceSnapshot {
   capturedAt?: Timestamp;
 }
 
+export type SourceUploadStage =
+  (typeof SourceUploadStage)[keyof typeof SourceUploadStage];
+
+export const SourceUploadStage = {
+  receiving: "receiving",
+  processing: "processing",
+  accepted: "accepted",
+  failed: "failed",
+} as const;
+
+export interface SourceUpload {
+  uploadId: string;
+  /**
+   * @minimum 1
+   * @maximum 1073741824
+   */
+  totalBytes: number;
+  /**
+   * Сколько байт файла сервер принял и сохранил.
+   * @minimum 0
+   */
+  receivedBytes: number;
+  /**
+   * Сколько байт файла разобрано при завершении загрузки.
+   * @minimum 0
+   */
+  processedBytes: number;
+  stage: SourceUploadStage;
+  /**
+   * Максимальный размер одной части, байт.
+   * @minimum 1
+   */
+  chunkBytes: number;
+  /**
+   * Задание пересчёта после stage=accepted.
+   * @nullable
+   */
+  jobId: string | null;
+}
+
 export interface SourceStatus {
   snapshotPresent: boolean;
   counts: SourceCounts;
@@ -772,12 +817,12 @@ export type ForbiddenResponse = ErrorResponse;
 export type NotFoundResponse = ErrorResponse;
 
 /**
- * expectedVersion не совпадает с опубликованной версией настроек, другое глобальное задание уже queued/running либо Idempotency-Key повторно использован для другого запроса. error.code различает VERSION_CONFLICT, JOB_IN_PROGRESS и IDEMPOTENCY_CONFLICT.
+ * expectedVersion не совпадает с опубликованной версией настроек, другое глобальное задание уже queued/running либо Idempotency-Key повторно использован для другого запроса. error.code различает VERSION_CONFLICT, JOB_IN_PROGRESS и IDEMPOTENCY_CONFLICT; для загрузки частями также UPLOAD_OFFSET_MISMATCH, UPLOAD_INCOMPLETE и UPLOAD_STATE.
  */
 export type ConflictResponse = ErrorResponse;
 
 /**
- * Снимок превышает настроенный на сервере лимит размера запроса.
+ * Снимок больше 1 ГиБ (1 073 741 824 байт), лимита размера запроса на сервере.
  */
 export type PayloadTooLargeResponse = ErrorResponse;
 
@@ -928,6 +973,15 @@ export type GetChurnSeriesParams = {
    * Конец периода UTC.
    */
   to: string;
+};
+
+export type StartSourceUploadBody = {
+  /**
+   * Размер всего файла в байтах.
+   * @minimum 1
+   * @maximum 1073741824
+   */
+  totalBytes: number;
 };
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
@@ -2828,7 +2882,7 @@ export const getReplaceSourceSnapshotUrl = () => {
 };
 
 /**
- * Сохраняет полный снимок в промежуточном хранилище PostgreSQL и задание одной транзакцией. 202 возвращается только после COMMIT и означает приём задания. Worker проверяет данные и пересчитывает анализ; только succeeded в GET /api/v1/jobs/{jobId} означает атомарную публикацию нового снимка, рейтинга, сводки и метрик. До публикации или при failed прежний снимок и результаты остаются действующими. Некорректный JSON даёт 400, превышение размера — 413. Ошибки, найденные при первичной проверке, дают 422; ошибки связей, дублей и других ограничений, найденные Worker после 202, дают failed с error.code=VALIDATION_ERROR и путями полей в error.details. Подозрительный, но представимый статус (например старый prolong_wait) возвращается в result.warnings успешного задания, а не переписывается молча. Проверяются уникальность email с учётом регистра, amount 0..1000, неотрицательные денежные значения, шаблон имени услуги и миллисекундные UTC-даты. Ограничение amount не распространяется на price или балансы. Одновременно допускается одно queued/running задание полной замены снимка или изменения модели на весь набор данных; другое изменение получает 409. Повтор с тем же Idempotency-Key обрабатывается до этой проверки и возвращает первоначальный 202 с тем же jobId. Отключение клиента не отменяет принятое задание. Это полный снимок, а не входящий поток событий.
+ * Сохраняет полный снимок в промежуточном хранилище PostgreSQL и задание одной транзакцией. 202 возвращается только после COMMIT и означает приём задания. Worker проверяет данные и пересчитывает анализ; только succeeded в GET /api/v1/jobs/{jobId} означает атомарную публикацию нового снимка, рейтинга, сводки и метрик. До публикации или при failed прежний снимок и результаты остаются действующими. Тело запроса — JSON не больше 1 ГиБ (1 073 741 824 байт). Некорректный JSON даёт 400, превышение размера — 413. Ошибки, найденные при первичной проверке, дают 422; ошибки связей, дублей и других ограничений, найденные Worker после 202, дают failed с error.code=VALIDATION_ERROR и путями полей в error.details. Подозрительный, но представимый статус (например старый prolong_wait) возвращается в result.warnings успешного задания, а не переписывается молча. Проверяются уникальность email с учётом регистра, amount 0..1000, неотрицательные денежные значения, шаблон имени услуги и миллисекундные UTC-даты. Ограничение amount не распространяется на price или балансы. Одновременно допускается одно queued/running задание полной замены снимка или изменения модели на весь набор данных; другое изменение получает 409. Повтор с тем же Idempotency-Key обрабатывается до этой проверки и возвращает первоначальный 202 с тем же jobId. Отключение клиента не отменяет принятое задание. Это полный снимок, а не входящий поток событий.
  * @summary Полная замена снимка с фоновым пересчётом
  */
 export const replaceSourceSnapshot = async (
@@ -3120,6 +3174,602 @@ export function useGetSourceStatus<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+export const getStartSourceUploadUrl = () => {
+  return `/api/v1/source/uploads`;
+};
+
+/**
+ * Создаёт сессию загрузки файла снимка до 1 ГиБ. Файл передаётся частями по chunkBytes байт через PUT /api/v1/source/uploads/{uploadId}/chunks/{offset}, затем POST .../complete проверяет снимок и создаёт задание так же, как PUT /api/v1/source/snapshot. Сессия видна только создавшему её пользователю.
+ * @summary Начать загрузку снимка частями
+ */
+export const startSourceUpload = async (
+  startSourceUploadBody: StartSourceUploadBody,
+  options?: Parameters<typeof http>[1],
+): Promise<SourceUpload> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit["headers"]>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<
+      string | readonly string[] | undefined
+    >(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return http<SourceUpload>(getStartSourceUploadUrl(), {
+    ...options,
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...getHeaders(options?.headers),
+    },
+    body: JSON.stringify(startSourceUploadBody),
+  });
+};
+
+export const getStartSourceUploadMutationKey = () =>
+  ["startSourceUpload"] as const;
+
+export const getStartSourceUploadMutationOptions = <
+  TError =
+    | BadRequestResponse
+    | UnauthorizedResponse
+    | PayloadTooLargeResponse
+    | InternalErrorResponse
+    | UnavailableResponse,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startSourceUpload>>,
+    TError,
+    StartSourceUploadMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof http>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof startSourceUpload>>,
+  TError,
+  StartSourceUploadMutationVariables,
+  TContext
+> => {
+  const mutationKey = getStartSourceUploadMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof startSourceUpload>>,
+    StartSourceUploadMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return startSourceUpload(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StartSourceUploadMutationResult = NonNullable<
+  Awaited<ReturnType<typeof startSourceUpload>>
+>;
+export type StartSourceUploadMutationBody = StartSourceUploadBody;
+export type StartSourceUploadMutationError =
+  | BadRequestResponse
+  | UnauthorizedResponse
+  | PayloadTooLargeResponse
+  | InternalErrorResponse
+  | UnavailableResponse;
+export type StartSourceUploadMutationVariables = {
+  data: StartSourceUploadBody;
+};
+
+/**
+ * @summary Начать загрузку снимка частями
+ */
+export const useStartSourceUpload = <
+  TError =
+    | BadRequestResponse
+    | UnauthorizedResponse
+    | PayloadTooLargeResponse
+    | InternalErrorResponse
+    | UnavailableResponse,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof startSourceUpload>>,
+      TError,
+      StartSourceUploadMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof http>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof startSourceUpload>>,
+  TError,
+  StartSourceUploadMutationVariables,
+  TContext
+> => {
+  return useMutation(getStartSourceUploadMutationOptions(options), queryClient);
+};
+
+export const getGetSourceUploadUrl = (uploadId: string) => {
+  return `/api/v1/source/uploads/${uploadId}`;
+};
+
+/**
+ * receivedBytes — сколько байт сервер принял и сохранил; processedBytes — сколько байт файла уже разобрано при завершении. Клиент опрашивает этот метод, пока выполняется complete.
+ * @summary Прогресс загрузки снимка
+ */
+export const getSourceUpload = async (
+  uploadId: string,
+  options?: Parameters<typeof http>[1],
+): Promise<SourceUpload> => {
+  return http<SourceUpload>(getGetSourceUploadUrl(uploadId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSourceUploadQueryKey = (uploadId: string) => {
+  return [`/api/v1/source/uploads/${uploadId}`] as const;
+};
+
+export const getGetSourceUploadQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSourceUpload>>,
+  TError =
+    | UnauthorizedResponse
+    | NotFoundResponse
+    | InternalErrorResponse
+    | UnavailableResponse,
+>(
+  uploadId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getSourceUpload>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof http>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetSourceUploadQueryKey(uploadId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSourceUpload>>> = ({
+    signal,
+  }) => getSourceUpload(uploadId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: uploadId !== null && uploadId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSourceUpload>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetSourceUploadQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSourceUpload>>
+>;
+export type GetSourceUploadQueryError =
+  | UnauthorizedResponse
+  | NotFoundResponse
+  | InternalErrorResponse
+  | UnavailableResponse;
+
+export function useGetSourceUpload<
+  TData = Awaited<ReturnType<typeof getSourceUpload>>,
+  TError =
+    | UnauthorizedResponse
+    | NotFoundResponse
+    | InternalErrorResponse
+    | UnavailableResponse,
+>(
+  uploadId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getSourceUpload>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSourceUpload>>,
+          TError,
+          Awaited<ReturnType<typeof getSourceUpload>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof http>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useGetSourceUpload<
+  TData = Awaited<ReturnType<typeof getSourceUpload>>,
+  TError =
+    | UnauthorizedResponse
+    | NotFoundResponse
+    | InternalErrorResponse
+    | UnavailableResponse,
+>(
+  uploadId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getSourceUpload>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSourceUpload>>,
+          TError,
+          Awaited<ReturnType<typeof getSourceUpload>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof http>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useGetSourceUpload<
+  TData = Awaited<ReturnType<typeof getSourceUpload>>,
+  TError =
+    | UnauthorizedResponse
+    | NotFoundResponse
+    | InternalErrorResponse
+    | UnavailableResponse,
+>(
+  uploadId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getSourceUpload>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof http>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Прогресс загрузки снимка
+ */
+
+export function useGetSourceUpload<
+  TData = Awaited<ReturnType<typeof getSourceUpload>>,
+  TError =
+    | UnauthorizedResponse
+    | NotFoundResponse
+    | InternalErrorResponse
+    | UnavailableResponse,
+>(
+  uploadId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getSourceUpload>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof http>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getGetSourceUploadQueryOptions(uploadId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getPutSourceUploadChunkUrl = (
+  uploadId: string,
+  offset: number,
+) => {
+  return `/api/v1/source/uploads/${uploadId}/chunks/${offset}`;
+};
+
+/**
+ * Тело — байты файла, начиная с offset, не больше chunkBytes. offset должен совпадать с receivedBytes; повтор уже принятой части ничего не меняет и возвращает текущее состояние. Часть не по порядку даёт 409 UPLOAD_OFFSET_MISMATCH, клиент продолжает с receivedBytes.
+ * @summary Передать часть файла снимка
+ */
+export const putSourceUploadChunk = async (
+  uploadId: string,
+  offset: number,
+  putSourceUploadChunkBody: Blob,
+  options?: Parameters<typeof http>[1],
+): Promise<SourceUpload> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit["headers"]>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(
+          h as Iterable<Iterable<string>>,
+          (entry) => Array.from(entry) as [string, string],
+        ),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<
+      string | readonly string[] | undefined
+    >(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return http<SourceUpload>(getPutSourceUploadChunkUrl(uploadId, offset), {
+    ...options,
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      ...getHeaders(options?.headers),
+    },
+    body: putSourceUploadChunkBody,
+  });
+};
+
+export const getPutSourceUploadChunkMutationKey = () =>
+  ["putSourceUploadChunk"] as const;
+
+export const getPutSourceUploadChunkMutationOptions = <
+  TError =
+    | BadRequestResponse
+    | UnauthorizedResponse
+    | NotFoundResponse
+    | ConflictResponse
+    | PayloadTooLargeResponse
+    | InternalErrorResponse
+    | UnavailableResponse,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof putSourceUploadChunk>>,
+    TError,
+    PutSourceUploadChunkMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof http>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof putSourceUploadChunk>>,
+  TError,
+  PutSourceUploadChunkMutationVariables,
+  TContext
+> => {
+  const mutationKey = getPutSourceUploadChunkMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof putSourceUploadChunk>>,
+    PutSourceUploadChunkMutationVariables
+  > = (props) => {
+    const { uploadId, offset, data } = props ?? {};
+
+    return putSourceUploadChunk(uploadId, offset, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PutSourceUploadChunkMutationResult = NonNullable<
+  Awaited<ReturnType<typeof putSourceUploadChunk>>
+>;
+export type PutSourceUploadChunkMutationBody = Blob;
+export type PutSourceUploadChunkMutationError =
+  | BadRequestResponse
+  | UnauthorizedResponse
+  | NotFoundResponse
+  | ConflictResponse
+  | PayloadTooLargeResponse
+  | InternalErrorResponse
+  | UnavailableResponse;
+export type PutSourceUploadChunkMutationVariables = {
+  uploadId: string;
+  offset: number;
+  data: Blob;
+};
+
+/**
+ * @summary Передать часть файла снимка
+ */
+export const usePutSourceUploadChunk = <
+  TError =
+    | BadRequestResponse
+    | UnauthorizedResponse
+    | NotFoundResponse
+    | ConflictResponse
+    | PayloadTooLargeResponse
+    | InternalErrorResponse
+    | UnavailableResponse,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof putSourceUploadChunk>>,
+      TError,
+      PutSourceUploadChunkMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof http>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof putSourceUploadChunk>>,
+  TError,
+  PutSourceUploadChunkMutationVariables,
+  TContext
+> => {
+  return useMutation(
+    getPutSourceUploadChunkMutationOptions(options),
+    queryClient,
+  );
+};
+
+export const getCompleteSourceUploadUrl = (uploadId: string) => {
+  return `/api/v1/source/uploads/${uploadId}/complete`;
+};
+
+/**
+ * Собирает принятые части, проверяет снимок и создаёт задание пересчёта с теми же правилами, что PUT /api/v1/source/snapshot, включая Idempotency-Key, 409 и 422. Во время проверки processedBytes в GET /api/v1/source/uploads/{uploadId} растёт до totalBytes. Части удаляются после завершения.
+ * @summary Завершить загрузку и принять снимок
+ */
+export const completeSourceUpload = async (
+  uploadId: string,
+  options?: Parameters<typeof http>[1],
+): Promise<JobAcceptedResponse> => {
+  return http<JobAcceptedResponse>(getCompleteSourceUploadUrl(uploadId), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getCompleteSourceUploadMutationKey = () =>
+  ["completeSourceUpload"] as const;
+
+export const getCompleteSourceUploadMutationOptions = <
+  TError =
+    | BadRequestResponse
+    | UnauthorizedResponse
+    | NotFoundResponse
+    | ConflictResponse
+    | ValidationErrorResponse
+    | InternalErrorResponse
+    | UnavailableResponse,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof completeSourceUpload>>,
+    TError,
+    CompleteSourceUploadMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof http>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof completeSourceUpload>>,
+  TError,
+  CompleteSourceUploadMutationVariables,
+  TContext
+> => {
+  const mutationKey = getCompleteSourceUploadMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof completeSourceUpload>>,
+    CompleteSourceUploadMutationVariables
+  > = (props) => {
+    const { uploadId } = props ?? {};
+
+    return completeSourceUpload(uploadId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CompleteSourceUploadMutationResult = NonNullable<
+  Awaited<ReturnType<typeof completeSourceUpload>>
+>;
+
+export type CompleteSourceUploadMutationError =
+  | BadRequestResponse
+  | UnauthorizedResponse
+  | NotFoundResponse
+  | ConflictResponse
+  | ValidationErrorResponse
+  | InternalErrorResponse
+  | UnavailableResponse;
+export type CompleteSourceUploadMutationVariables = { uploadId: string };
+
+/**
+ * @summary Завершить загрузку и принять снимок
+ */
+export const useCompleteSourceUpload = <
+  TError =
+    | BadRequestResponse
+    | UnauthorizedResponse
+    | NotFoundResponse
+    | ConflictResponse
+    | ValidationErrorResponse
+    | InternalErrorResponse
+    | UnavailableResponse,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof completeSourceUpload>>,
+      TError,
+      CompleteSourceUploadMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof http>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof completeSourceUpload>>,
+  TError,
+  CompleteSourceUploadMutationVariables,
+  TContext
+> => {
+  return useMutation(
+    getCompleteSourceUploadMutationOptions(options),
+    queryClient,
+  );
+};
 
 export const getGetCalculationJobUrl = (jobId: JobId) => {
   return `/api/v1/jobs/${jobId}`;

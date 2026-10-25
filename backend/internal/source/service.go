@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"io"
 	"sort"
 	"time"
 
@@ -21,6 +22,10 @@ func NewService(repository Repository) *Service {
 }
 
 func (s *Service) Import(ctx context.Context, payload []byte, submission jobs.Submission) (entity.JobAccepted, error) {
+	return s.ImportTracked(ctx, payload, submission, nil)
+}
+
+func (s *Service) ImportTracked(ctx context.Context, payload []byte, submission jobs.Submission, track func(int64)) (entity.JobAccepted, error) {
 	hash, err := snapshotHash(payload)
 	if err != nil {
 		return entity.JobAccepted{}, err
@@ -33,7 +38,11 @@ func (s *Service) Import(ctx context.Context, payload []byte, submission jobs.Su
 	} else if previous != nil {
 		return acceptedResponse(*previous), nil
 	}
-	snapshot, err := DecodeSnapshot(bytes.NewReader(payload))
+	var reader io.Reader = bytes.NewReader(payload)
+	if track != nil {
+		reader = &countingReader{reader: reader, track: track}
+	}
+	snapshot, err := DecodeSnapshot(reader)
 	if err != nil {
 		return entity.JobAccepted{}, err
 	}
@@ -122,4 +131,17 @@ func snapshotHash(payload []byte) ([32]byte, error) {
 	var sum [32]byte
 	copy(sum[:], hash.Sum(nil))
 	return sum, nil
+}
+
+type countingReader struct {
+	reader io.Reader
+	read   int64
+	track  func(int64)
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	r.read += int64(n)
+	r.track(r.read)
+	return n, err
 }

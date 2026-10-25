@@ -130,6 +130,19 @@ describe("ModelPage", () => {
     expect(screen.getByText("0 – 69")).toBeTruthy();
   });
 
+  it("cancel restores the published settings", async () => {
+    stubApi(routes("succeeded"));
+    renderRoute(<ModelPage />, "/model");
+    await ready();
+
+    fireEvent.change(screen.getByLabelText("Горизонт оценки потерь, дней"), {
+      target: { value: "60" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Отменить изменения" }));
+
+    expect(await screen.findByDisplayValue("30")).toBeTruthy();
+  });
+
   it("shows why a background recalculation failed", async () => {
     stubApi(routes("failed"));
     renderRoute(<ModelPage />, "/model");

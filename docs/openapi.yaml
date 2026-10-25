@@ -590,6 +590,152 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /api/v1/source/uploads:
+    post:
+      operationId: startSourceUpload
+      tags:
+      - Source
+      summary: Начать загрузку снимка частями
+      description: Создаёт сессию загрузки файла снимка до 1 ГиБ. Файл передаётся частями по chunkBytes байт через
+        PUT /api/v1/source/uploads/{uploadId}/chunks/{offset}, затем POST .../complete проверяет снимок и создаёт
+        задание так же, как PUT /api/v1/source/snapshot. Сессия видна только создавшему её пользователю.
+      x-required-by-case: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - totalBytes
+              properties:
+                totalBytes:
+                  type: integer
+                  format: int64
+                  minimum: 1
+                  maximum: 1073741824
+                  description: Размер всего файла в байтах.
+      responses:
+        '201':
+          description: Сессия создана.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceUpload'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/source/uploads/{uploadId}:
+    get:
+      operationId: getSourceUpload
+      tags:
+      - Source
+      summary: Прогресс загрузки снимка
+      description: receivedBytes — сколько байт сервер принял и сохранил; processedBytes — сколько байт файла уже
+        разобрано при завершении. Клиент опрашивает этот метод, пока выполняется complete.
+      x-required-by-case: false
+      parameters:
+      - $ref: '#/components/parameters/UploadId'
+      responses:
+        '200':
+          description: Состояние загрузки.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceUpload'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/source/uploads/{uploadId}/chunks/{offset}:
+    put:
+      operationId: putSourceUploadChunk
+      tags:
+      - Source
+      summary: Передать часть файла снимка
+      description: Тело — байты файла, начиная с offset, не больше chunkBytes. offset должен совпадать с receivedBytes;
+        повтор уже принятой части ничего не меняет и возвращает текущее состояние. Часть не по порядку даёт 409
+        UPLOAD_OFFSET_MISMATCH, клиент продолжает с receivedBytes.
+      x-required-by-case: false
+      parameters:
+      - $ref: '#/components/parameters/UploadId'
+      - name: offset
+        in: path
+        required: true
+        description: Смещение части в файле, байт.
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: Часть сохранена.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceUpload'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/source/uploads/{uploadId}/complete:
+    post:
+      operationId: completeSourceUpload
+      tags:
+      - Source
+      summary: Завершить загрузку и принять снимок
+      description: Собирает принятые части, проверяет снимок и создаёт задание пересчёта с теми же правилами, что
+        PUT /api/v1/source/snapshot, включая Idempotency-Key, 409 и 422. Во время проверки processedBytes в
+        GET /api/v1/source/uploads/{uploadId} растёт до totalBytes. Части удаляются после завершения.
+      x-required-by-case: false
+      parameters:
+      - $ref: '#/components/parameters/UploadId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /api/v1/jobs/{jobId}:
     get:
       operationId: getCalculationJob
@@ -847,6 +993,14 @@ components:
       scheme: bearer
       description: Отдельный токен сборщика METRICS_TOKEN, а не пользовательская сессия.
   parameters:
+    UploadId:
+      name: uploadId
+      in: path
+      required: true
+      description: Идентификатор сессии загрузки.
+      schema:
+        type: string
+        format: uuid
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -1649,6 +1803,34 @@ components:
           nullable: true
           description: Текущее queued/running задание изменения модели или полной замены снимка этого набора;
             null при его отсутствии. Поле опционально, но реализация асинхронного режима должна его возвращать.
+        recalculationEstimate:
+          $ref: '#/components/schemas/RecalculationEstimate'
+    RecalculationEstimate:
+      type: object
+      nullable: true
+      required:
+      - seconds
+      - customers
+      - basedOnJobs
+      description: Примерное время полного пересчёта текущего набора. Считается по средней скорости последних
+        успешных заданий сопоставимого объёма (не меньше десятой части текущего числа клиентов). Отсутствует,
+        если снимка нет или подходящих заданий ещё не было. Это ориентир, а не обещание срока.
+      properties:
+        seconds:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Ожидаемая длительность пересчёта, секунд.
+        customers:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Число клиентов в текущем снимке.
+        basedOnJobs:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Сколько завершённых заданий учтено в оценке.
     FeatureDefinition:
       type: object
       required:
@@ -1758,6 +1940,52 @@ components:
             $ref: '#/components/schemas/ImportWarning'
         calculation:
           $ref: '#/components/schemas/Calculation'
+    SourceUpload:
+      type: object
+      required:
+      - uploadId
+      - totalBytes
+      - receivedBytes
+      - processedBytes
+      - stage
+      - chunkBytes
+      - jobId
+      properties:
+        uploadId:
+          type: string
+          format: uuid
+        totalBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1073741824
+        receivedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Сколько байт файла сервер принял и сохранил.
+        processedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Сколько байт файла разобрано при завершении загрузки.
+        stage:
+          type: string
+          enum:
+          - receiving
+          - processing
+          - accepted
+          - failed
+        chunkBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Максимальный размер одной части, байт.
+        jobId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Задание пересчёта после stage=accepted.
     SourceStatus:
       type: object
       required:
@@ -2000,7 +2228,8 @@ components:
     Conflict:
       description: expectedVersion не совпадает с опубликованной версией настроек, другое глобальное задание
         уже queued/running либо Idempotency-Key повторно использован для другого запроса. error.code различает
-        VERSION_CONFLICT, JOB_IN_PROGRESS и IDEMPOTENCY_CONFLICT.
+        VERSION_CONFLICT, JOB_IN_PROGRESS и IDEMPOTENCY_CONFLICT; для загрузки частями также UPLOAD_OFFSET_MISMATCH,
+        UPLOAD_INCOMPLETE и UPLOAD_STATE.
       content:
         application/json:
           schema:

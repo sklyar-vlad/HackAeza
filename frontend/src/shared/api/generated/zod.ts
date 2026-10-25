@@ -1218,6 +1218,22 @@ export const GetModelSettingsResponse = zod.object({
     .describe(
       "Текущее queued/running задание изменения модели или полной замены снимка этого набора; null при его отсутствии. Поле опционально, но реализация асинхронного режима должна его возвращать.",
     ),
+  recalculationEstimate: zod
+    .object({
+      seconds: zod
+        .int()
+        .min(1)
+        .describe("Ожидаемая длительность пересчёта, секунд."),
+      customers: zod.int().min(1).describe("Число клиентов в текущем снимке."),
+      basedOnJobs: zod
+        .int()
+        .min(1)
+        .describe("Сколько завершённых заданий учтено в оценке."),
+    })
+    .nullish()
+    .describe(
+      "Примерное время полного пересчёта текущего набора. Считается по средней скорости последних успешных заданий сопоставимого объёма (не меньше десятой части текущего числа клиентов). Отсутствует, если снимка нет или подходящих заданий ещё не было. Это ориентир, а не обещание срока.",
+    ),
 });
 
 /**
@@ -1364,7 +1380,7 @@ export const ListModelFeaturesResponse = zod.object({
 });
 
 /**
- * Сохраняет полный снимок в промежуточном хранилище PostgreSQL и задание одной транзакцией. 202 возвращается только после COMMIT и означает приём задания. Worker проверяет данные и пересчитывает анализ; только succeeded в GET /api/v1/jobs/{jobId} означает атомарную публикацию нового снимка, рейтинга, сводки и метрик. До публикации или при failed прежний снимок и результаты остаются действующими. Некорректный JSON даёт 400, превышение размера — 413. Ошибки, найденные при первичной проверке, дают 422; ошибки связей, дублей и других ограничений, найденные Worker после 202, дают failed с error.code=VALIDATION_ERROR и путями полей в error.details. Подозрительный, но представимый статус (например старый prolong_wait) возвращается в result.warnings успешного задания, а не переписывается молча. Проверяются уникальность email с учётом регистра, amount 0..1000, неотрицательные денежные значения, шаблон имени услуги и миллисекундные UTC-даты. Ограничение amount не распространяется на price или балансы. Одновременно допускается одно queued/running задание полной замены снимка или изменения модели на весь набор данных; другое изменение получает 409. Повтор с тем же Idempotency-Key обрабатывается до этой проверки и возвращает первоначальный 202 с тем же jobId. Отключение клиента не отменяет принятое задание. Это полный снимок, а не входящий поток событий.
+ * Сохраняет полный снимок в промежуточном хранилище PostgreSQL и задание одной транзакцией. 202 возвращается только после COMMIT и означает приём задания. Worker проверяет данные и пересчитывает анализ; только succeeded в GET /api/v1/jobs/{jobId} означает атомарную публикацию нового снимка, рейтинга, сводки и метрик. До публикации или при failed прежний снимок и результаты остаются действующими. Тело запроса — JSON не больше 1 ГиБ (1 073 741 824 байт). Некорректный JSON даёт 400, превышение размера — 413. Ошибки, найденные при первичной проверке, дают 422; ошибки связей, дублей и других ограничений, найденные Worker после 202, дают failed с error.code=VALIDATION_ERROR и путями полей в error.details. Подозрительный, но представимый статус (например старый prolong_wait) возвращается в result.warnings успешного задания, а не переписывается молча. Проверяются уникальность email с учётом регистра, amount 0..1000, неотрицательные денежные значения, шаблон имени услуги и миллисекундные UTC-даты. Ограничение amount не распространяется на price или балансы. Одновременно допускается одно queued/running задание полной замены снимка или изменения модели на весь набор данных; другое изменение получает 409. Повтор с тем же Idempotency-Key обрабатывается до этой проверки и возвращает первоначальный 202 с тем же jobId. Отключение клиента не отменяет принятое задание. Это полный снимок, а не входящий поток событий.
  * @summary Полная замена снимка с фоновым пересчётом
  */
 export const replaceSourceSnapshotHeaderIdempotencyKeyMax = 128;
@@ -1697,6 +1713,204 @@ export const GetSourceStatusResponse = zod.object({
 });
 
 /**
+ * Создаёт сессию загрузки файла снимка до 1 ГиБ. Файл передаётся частями по chunkBytes байт через PUT /api/v1/source/uploads/{uploadId}/chunks/{offset}, затем POST .../complete проверяет снимок и создаёт задание так же, как PUT /api/v1/source/snapshot. Сессия видна только создавшему её пользователю.
+ * @summary Начать загрузку снимка частями
+ */
+export const startSourceUploadBodyTotalBytesMax = 1073741824;
+
+export const StartSourceUploadBody = zod.object({
+  totalBytes: zod
+    .int()
+    .min(1)
+    .max(startSourceUploadBodyTotalBytesMax)
+    .describe("Размер всего файла в байтах."),
+});
+
+export const startSourceUploadResponseTotalBytesMax = 1073741824;
+
+export const startSourceUploadResponseReceivedBytesMin = 0;
+
+export const startSourceUploadResponseProcessedBytesMin = 0;
+
+export const StartSourceUploadResponse = zod.object({
+  uploadId: zod.uuid(),
+  totalBytes: zod.int().min(1).max(startSourceUploadResponseTotalBytesMax),
+  receivedBytes: zod
+    .int()
+    .min(startSourceUploadResponseReceivedBytesMin)
+    .describe("Сколько байт файла сервер принял и сохранил."),
+  processedBytes: zod
+    .int()
+    .min(startSourceUploadResponseProcessedBytesMin)
+    .describe("Сколько байт файла разобрано при завершении загрузки."),
+  stage: zod.enum(["receiving", "processing", "accepted", "failed"]),
+  chunkBytes: zod
+    .int()
+    .min(1)
+    .describe("Максимальный размер одной части, байт."),
+  jobId: zod
+    .uuid()
+    .nullable()
+    .describe("Задание пересчёта после stage=accepted."),
+});
+
+/**
+ * receivedBytes — сколько байт сервер принял и сохранил; processedBytes — сколько байт файла уже разобрано при завершении. Клиент опрашивает этот метод, пока выполняется complete.
+ * @summary Прогресс загрузки снимка
+ */
+export const GetSourceUploadParams = zod.object({
+  uploadId: zod.uuid().describe("Идентификатор сессии загрузки."),
+});
+
+export const getSourceUploadResponseTotalBytesMax = 1073741824;
+
+export const getSourceUploadResponseReceivedBytesMin = 0;
+
+export const getSourceUploadResponseProcessedBytesMin = 0;
+
+export const GetSourceUploadResponse = zod.object({
+  uploadId: zod.uuid(),
+  totalBytes: zod.int().min(1).max(getSourceUploadResponseTotalBytesMax),
+  receivedBytes: zod
+    .int()
+    .min(getSourceUploadResponseReceivedBytesMin)
+    .describe("Сколько байт файла сервер принял и сохранил."),
+  processedBytes: zod
+    .int()
+    .min(getSourceUploadResponseProcessedBytesMin)
+    .describe("Сколько байт файла разобрано при завершении загрузки."),
+  stage: zod.enum(["receiving", "processing", "accepted", "failed"]),
+  chunkBytes: zod
+    .int()
+    .min(1)
+    .describe("Максимальный размер одной части, байт."),
+  jobId: zod
+    .uuid()
+    .nullable()
+    .describe("Задание пересчёта после stage=accepted."),
+});
+
+/**
+ * Тело — байты файла, начиная с offset, не больше chunkBytes. offset должен совпадать с receivedBytes; повтор уже принятой части ничего не меняет и возвращает текущее состояние. Часть не по порядку даёт 409 UPLOAD_OFFSET_MISMATCH, клиент продолжает с receivedBytes.
+ * @summary Передать часть файла снимка
+ */
+export const putSourceUploadChunkPathOffsetMin = 0;
+
+export const PutSourceUploadChunkParams = zod.object({
+  uploadId: zod.uuid().describe("Идентификатор сессии загрузки."),
+  offset: zod
+    .int()
+    .min(putSourceUploadChunkPathOffsetMin)
+    .describe("Смещение части в файле, байт."),
+});
+
+export const putSourceUploadChunkResponseTotalBytesMax = 1073741824;
+
+export const putSourceUploadChunkResponseReceivedBytesMin = 0;
+
+export const putSourceUploadChunkResponseProcessedBytesMin = 0;
+
+export const PutSourceUploadChunkResponse = zod.object({
+  uploadId: zod.uuid(),
+  totalBytes: zod.int().min(1).max(putSourceUploadChunkResponseTotalBytesMax),
+  receivedBytes: zod
+    .int()
+    .min(putSourceUploadChunkResponseReceivedBytesMin)
+    .describe("Сколько байт файла сервер принял и сохранил."),
+  processedBytes: zod
+    .int()
+    .min(putSourceUploadChunkResponseProcessedBytesMin)
+    .describe("Сколько байт файла разобрано при завершении загрузки."),
+  stage: zod.enum(["receiving", "processing", "accepted", "failed"]),
+  chunkBytes: zod
+    .int()
+    .min(1)
+    .describe("Максимальный размер одной части, байт."),
+  jobId: zod
+    .uuid()
+    .nullable()
+    .describe("Задание пересчёта после stage=accepted."),
+});
+
+/**
+ * Собирает принятые части, проверяет снимок и создаёт задание пересчёта с теми же правилами, что PUT /api/v1/source/snapshot, включая Idempotency-Key, 409 и 422. Во время проверки processedBytes в GET /api/v1/source/uploads/{uploadId} растёт до totalBytes. Части удаляются после завершения.
+ * @summary Завершить загрузку и принять снимок
+ */
+export const CompleteSourceUploadParams = zod.object({
+  uploadId: zod.uuid().describe("Идентификатор сессии загрузки."),
+});
+
+export const completeSourceUploadHeaderIdempotencyKeyMax = 128;
+
+export const completeSourceUploadHeaderIdempotencyKeyRegExp = new RegExp(
+  "^[A-Za-z0-9._:-]+$",
+);
+
+export const CompleteSourceUploadHeader = zod.object({
+  "Idempotency-Key": zod
+    .string()
+    .min(1)
+    .max(completeSourceUploadHeaderIdempotencyKeyMax)
+    .regex(completeSourceUploadHeaderIdempotencyKeyRegExp)
+    .optional()
+    .describe(
+      "Рекомендуется для PATCH settings и PUT snapshot. Ключ уникален в области авторизованного пользователя и набора данных. Повтор того же метода, пути и содержимого запроса с этим ключом возвращает первоначальный 202 с тем же jobId и не создаёт новое задание, даже если оно уже завершено. Другое содержимое, метод или путь с тем же ключом дают 409. Запись ключа, кандидата и задания атомарна; ключ хранится не менее 24 часов после приёма и до завершения задания, если оно длится дольше. После истечения срока ключ может создать новое задание. Клиент создаёт новый ключ для нового действия и повторяет прежний при потере ответа.",
+    ),
+});
+
+export const completeSourceUploadResponseStatusUrlRegExp = new RegExp(
+  "^/api/v1/jobs/[0-9a-fA-F-]+$",
+);
+export const completeSourceUploadResponseCalculationVersionMin = 0;
+
+export const completeSourceUploadResponseCalculationSourceVersionMin = 0;
+
+export const CompleteSourceUploadResponse = zod
+  .object({
+    jobId: zod
+      .uuid()
+      .describe(
+        "Непредсказуемый идентификатор задания; не заменяет проверку доступа.",
+      ),
+    statusUrl: zod
+      .string()
+      .regex(completeSourceUploadResponseStatusUrlRegExp)
+      .describe(
+        "Относительный URL состояния задания на том же origin. Токен в URL не передаётся.",
+      ),
+    createdAt: zod.iso
+      .datetime({ offset: true })
+      .describe("Дата и время с часовым поясом; ответы в UTC."),
+    calculation: zod
+      .object({
+        version: zod
+          .int()
+          .min(completeSourceUploadResponseCalculationVersionMin)
+          .describe(
+            "Версия опубликованного результата; растёт также при пересчёте по времени.",
+          ),
+        sourceVersion: zod
+          .int()
+          .min(completeSourceUploadResponseCalculationSourceVersionMin)
+          .describe("Версия сохранённого снимка; 0 до первого импорта."),
+        modelVersion: zod
+          .int()
+          .min(1)
+          .describe("Версия сохранённых настроек модели."),
+        calculatedAt: zod.iso
+          .datetime({ offset: true })
+          .nullable()
+          .describe("null до первого расчёта."),
+      })
+      .describe(
+        "Рейтинг, сводка и /metrics читают одну опубликованную версию. До первого импорта version=0, sourceVersion=0, calculatedAt=null.",
+      ),
+  })
+  .describe(
+    "Задание надёжно принято. calculation описывает опубликованную версию на момент приёма, а не результат задания. При повторе с Idempotency-Key возвращается исходное представление; актуальное состояние всегда читается через statusUrl.",
+  );
+
+/**
  * Требует авторизации и доступа к набору данных задания. Возвращает 200 для любого существующего доступного задания, включая failed: ошибка выполнения находится в error, а не в HTTP-статусе этого GET. Состояния: queued → running → succeeded либо failed. Восстановление после падения Worker допускает running → queued с последующим увеличением attempt; progress относится к текущей попытке и может сброситься. Worker использует срок владения заданием, повторное выполнение и защиту публикации от устаревшей попытки; повтор не должен повторно применять результаты. succeeded и result сохраняются одной транзакцией с публикацией версии. При failed опубликованные данные не заменяются. Задания сохраняются в PostgreSQL при перезапуске. Завершённые задания доступны не менее 24 часов после finishedAt; неизвестный, недоступный или уже удалённый по сроку хранения jobId даёт 404. Retry-After задаёт интервал опроса queued/running, клиент прекращает опрос после succeeded/failed. Рекомендуется опрашивать только активное задание с паузой не менее Retry-After; при сетевой ошибке увеличивать интервал. Статус задания не кешируется.
  * @summary Состояние фонового задания
  */
@@ -1732,6 +1946,10 @@ export const getCalculationJobResponseResultTwoCalculationVersionMin = 0;
 
 export const getCalculationJobResponseResultTwoCalculationSourceVersionMin = 0;
 
+export const getCalculationJobResponseResultThreeCalculationVersionMin = 0;
+
+export const getCalculationJobResponseResultThreeCalculationSourceVersionMin = 0;
+
 export const GetCalculationJobResponse = zod
   .object({
     jobId: zod
@@ -1739,7 +1957,7 @@ export const GetCalculationJobResponse = zod
       .describe(
         "Непредсказуемый идентификатор задания; не заменяет проверку доступа.",
       ),
-    kind: zod.enum(["model_settings", "source_snapshot"]),
+    kind: zod.enum(["model_settings", "source_snapshot", "time_recalculation"]),
     status: zod.enum(["queued", "running", "succeeded", "failed"]),
     createdAt: zod.iso
       .datetime({ offset: true })
@@ -1862,6 +2080,25 @@ export const GetCalculationJobResponse = zod
             .describe(
               "Текущее queued/running задание изменения модели или полной замены снимка этого набора; null при его отсутствии. Поле опционально, но реализация асинхронного режима должна его возвращать.",
             ),
+          recalculationEstimate: zod
+            .object({
+              seconds: zod
+                .int()
+                .min(1)
+                .describe("Ожидаемая длительность пересчёта, секунд."),
+              customers: zod
+                .int()
+                .min(1)
+                .describe("Число клиентов в текущем снимке."),
+              basedOnJobs: zod
+                .int()
+                .min(1)
+                .describe("Сколько завершённых заданий учтено в оценке."),
+            })
+            .nullish()
+            .describe(
+              "Примерное время полного пересчёта текущего набора. Считается по средней скорости последних успешных заданий сопоставимого объёма (не меньше десятой части текущего числа клиентов). Отсутствует, если снимка нет или подходящих заданий ещё не было. Это ориентир, а не обещание срока.",
+            ),
         }),
         zod.object({
           counts: zod.object({
@@ -1909,10 +2146,38 @@ export const GetCalculationJobResponse = zod
               "Рейтинг, сводка и /metrics читают одну опубликованную версию. До первого импорта version=0, sourceVersion=0, calculatedAt=null.",
             ),
         }),
+        zod.object({
+          calculation: zod
+            .object({
+              version: zod
+                .int()
+                .min(getCalculationJobResponseResultThreeCalculationVersionMin)
+                .describe(
+                  "Версия опубликованного результата; растёт также при пересчёте по времени.",
+                ),
+              sourceVersion: zod
+                .int()
+                .min(
+                  getCalculationJobResponseResultThreeCalculationSourceVersionMin,
+                )
+                .describe("Версия сохранённого снимка; 0 до первого импорта."),
+              modelVersion: zod
+                .int()
+                .min(1)
+                .describe("Версия сохранённых настроек модели."),
+              calculatedAt: zod.iso
+                .datetime({ offset: true })
+                .nullable()
+                .describe("null до первого расчёта."),
+            })
+            .describe(
+              "Рейтинг, сводка и /metrics читают одну опубликованную версию. До первого импорта version=0, sourceVersion=0, calculatedAt=null.",
+            ),
+        }),
       ])
       .optional()
       .describe(
-        "Только для succeeded. При kind=model_settings содержит ModelSettingsResponse, при kind=source_snapshot — SnapshotResult. Версия в result — результат этого задания, она может быть уже не самой новой при последующих обновлениях.",
+        "Только для succeeded. При kind=model_settings содержит ModelSettingsResponse, при kind=source_snapshot — SnapshotResult, при kind=time_recalculation — TimeRecalculationResult. Версия в result — результат этого задания, она может быть уже не самой новой при последующих обновлениях.",
       ),
     error: zod
       .object({

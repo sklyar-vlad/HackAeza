@@ -156,6 +156,22 @@ p {
   align-items: start;
 }
 
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 1099px) {
+  .kpi-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 479px) {
+  .kpi-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- cards ---------- */
 .card {
   min-width: 0;
@@ -537,6 +553,15 @@ p {
   padding: 12px 8px;
   border-top: 1px solid var(--line);
   vertical-align: middle;
+}
+.table.fixed {
+  min-width: 860px;
+  table-layout: fixed;
+}
+.table .clip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .table .right {
   text-align: right;

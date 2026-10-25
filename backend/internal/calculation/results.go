@@ -17,6 +17,27 @@ func (r *PostgresRepository) SaveResults(ctx context.Context, run Run, results [
 		if err := lockLease(ctx, tx, run.Lease); err != nil {
 			return err
 		}
+		if err := checkRun(ctx, tx, run); err != nil {
+			return err
+		}
+		ids := make([]int64, len(results))
+		for i, result := range results {
+			ids[i] = int64(result.ID)
+			for _, service := range result.Services {
+				if service.OwnerID != result.ID {
+					return fmt.Errorf("service %d does not belong to customer %d", service.ID, result.ID)
+				}
+			}
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM service_results r USING services s
+			WHERE r.calculation_version = $1 AND r.source_version = s.snapshot_version
+			AND r.service_id = s.id AND s.owner_id = ANY($2::bigint[])`, run.Target.Version, ids); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM customer_results
+			WHERE calculation_version = $1 AND customer_id = ANY($2::bigint[])`, run.Target.Version, ids); err != nil {
+			return err
+		}
 		customerColumns := append([]string{"calculation_version", "customer_id", "source_version", "services_count"}, assessmentColumns...)
 		_, err := tx.CopyFrom(ctx, pgx.Identifier{"customer_results"}, customerColumns,
 			pgx.CopyFromSlice(len(results), func(i int) ([]any, error) {
@@ -71,6 +92,14 @@ func assessmentRow(row []any, assessment entity.RiskAssessment, features []entit
 
 func (r *PostgresRepository) Publish(ctx context.Context, run Run, summary entity.AnalyticsSummary, warnings []entity.ImportWarning) (entity.CalculationJob, error) {
 	return r.publisher.Publish(ctx, run.Lease, func(tx pgx.Tx) (entity.JobResult, error) {
+		if err := checkRun(ctx, tx, run); err != nil {
+			return nil, err
+		}
+		if summary.Calculation.Version != run.Target.Version || summary.Calculation.SourceVersion != run.Target.SourceVersion ||
+			summary.Calculation.ModelVersion != run.Target.ModelVersion || summary.Calculation.CalculatedAt == nil ||
+			!summary.Calculation.CalculatedAt.Equal(*run.Target.CalculatedAt) || summary.Loss.HorizonDays != run.Settings.HorizonDays {
+			return nil, entity.ErrVersionConflict
+		}
 		var customers, services int64
 		err := tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM customer_results WHERE calculation_version = $1),
 			(SELECT count(*) FROM service_results WHERE calculation_version = $1)`, run.Target.Version).Scan(&customers, &services)
@@ -99,9 +128,15 @@ func (r *PostgresRepository) Publish(ctx context.Context, run Run, summary entit
 		if tag.RowsAffected() != 1 {
 			return nil, entity.ErrVersionConflict
 		}
-		if _, err := tx.Exec(ctx, `UPDATE published_state SET active_calculation_version = $1, active_model_version = $2 WHERE id = 1`,
-			run.Target.Version, run.Target.ModelVersion); err != nil {
+		tag, err = tx.Exec(ctx, `UPDATE published_state SET active_calculation_version = $1, active_model_version = $2
+			WHERE id = 1 AND coalesce(active_calculation_version, 0) = $3
+			AND active_model_version = $4 AND pending_job_id = $5::uuid`,
+			run.Target.Version, run.Target.ModelVersion, run.Base.Version, run.Base.ModelVersion, run.Lease.JobID)
+		if err != nil {
 			return nil, err
+		}
+		if tag.RowsAffected() != 1 {
+			return nil, entity.ErrVersionConflict
 		}
 		switch run.Kind {
 		case entity.JobTimeRecalculation:

@@ -14,7 +14,7 @@ import {
 } from "@/shared/api/generated/api";
 import { UpdateModelSettingsBody } from "@/shared/api/generated/zod";
 import { ApiError } from "@/shared/api/http";
-import { date } from "@/shared/lib/format";
+import { date, int } from "@/shared/lib/format";
 
 const body = UpdateModelSettingsBody.shape;
 const Form = z
@@ -102,6 +102,7 @@ export function ModelPage() {
       shouldValidate: true,
     });
   const { mediumFrom, highFrom } = values.thresholds ?? settings.thresholds;
+  const estimate = data.recalculationEstimate;
   const active = registry.items.filter((f) => coef(f.key) > 0).length;
   const saveError = save.error instanceof ApiError ? save.error : null;
 
@@ -117,7 +118,7 @@ export function ModelPage() {
         </div>
       </div>
 
-      <section className="grid" style={{ "--min": "220px" } as CSSProperties}>
+      <section className="kpi-row">
         <div className="card">
           <div className="kpi-label">Версия модели</div>
           <div className="kpi-value">v{settings.version}</div>
@@ -133,6 +134,17 @@ export function ModelPage() {
           <div className="kpi-value">{data.calculation.version}</div>
           <div className="kpi-sub">
             от {date(data.calculation.calculatedAt)}
+          </div>
+        </div>
+        <div className="card">
+          <div className="kpi-label">Пересчёт займёт</div>
+          <div className="kpi-value">
+            {estimate ? `≈ ${int(estimate.seconds)} с` : "—"}
+          </div>
+          <div className="kpi-sub">
+            {estimate
+              ? `${int(estimate.customers)} клиентов${estimate.seconds >= 60 ? ` · около ${Math.round(estimate.seconds / 60)} мин` : ""}`
+              : "оценка появится после первого пересчёта"}
           </div>
         </div>
       </section>
@@ -346,7 +358,7 @@ export function ModelPage() {
           type="button"
           className="btn btn-ghost"
           disabled={!formState.isDirty}
-          onClick={() => reset(toForm(settings))}
+          onClick={() => reset(toForm(settings), { keepDirtyValues: false })}
         >
           Отменить изменения
         </button>

@@ -104,19 +104,37 @@ export function OverviewPage() {
         </div>
       </section>
 
-      <div className="grid" style={{ "--min": "380px" } as CSSProperties}>
-        <section className="card">
+      <div
+        className="grid"
+        style={{ "--min": "420px", alignItems: "stretch" } as CSSProperties}
+      >
+        <section
+          className="card"
+          style={{ display: "flex", flexDirection: "column" }}
+        >
           <div className="card-head">
             <h2>Клиенты по уровню риска</h2>
           </div>
           <div
-            className="grid"
-            style={{ "--min": "180px", alignItems: "center" } as CSSProperties}
+            style={{
+              flex: 1,
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 28,
+            }}
           >
             <RiskRing counts={byRisk} total={total} />
             <ul
               className="stack"
-              style={{ gap: 12, margin: 0, padding: 0, listStyle: "none" }}
+              style={{
+                gap: 14,
+                margin: 0,
+                padding: 0,
+                listStyle: "none",
+                minWidth: 180,
+              }}
             >
               {RISK_LEVELS.map((level) => (
                 <li
@@ -163,7 +181,7 @@ export function OverviewPage() {
           ) : (
             <>
               <ChurnChart points={churn?.points ?? []} />
-              <p className="muted" style={{ marginBottom: 0 }}>
+              <p className="muted" style={{ margin: "12px 0 0", fontSize: 13 }}>
                 Сценарная оценка по индексу риска, не вероятность оттока.
                 Горизонт модели — {summary?.loss.horizonDays ?? "—"} дней.
               </p>

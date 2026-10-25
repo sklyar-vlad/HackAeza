@@ -2,18 +2,21 @@ import { useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { JobNotice, useJob } from "@/entities/job";
 import {
+  completeSourceUpload,
+  getSourceUpload,
+  startSourceUpload,
   useGetSourceStatus,
-  type JobAccepted,
+  type SourceUpload,
   type SnapshotResult,
   type SourceCounts,
   type SourceSnapshot,
 } from "@/shared/api/generated/api";
 import { ReplaceSourceSnapshotBody } from "@/shared/api/generated/zod";
-import { ApiError, upload, type UploadProgress } from "@/shared/api/http";
+import { ApiError, upload } from "@/shared/api/http";
 import { bytes, date, dateOnly, int, time } from "@/shared/lib/format";
 import { Icon } from "@/shared/ui/Icon";
 import styles from "./SourcePage.module.css";
-import { UploadMeter } from "./UploadMeter";
+import { UploadMeter, type Sending } from "./UploadMeter";
 
 type Picked = {
   key: string;
@@ -64,29 +67,48 @@ export function SourcePage() {
   const { data: status } = useGetSourceStatus();
   const [picked, setPicked] = useState<Picked | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [sending, setSending] = useState<{
-    progress: UploadProgress;
-    startedAt: number;
-  } | null>(null);
+  const [sending, setSending] = useState<Sending | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const { job, busy } = useJob(jobId ?? status?.pendingJobId);
 
   const send = useMutation({
-    mutationFn: ({ file, key }: { file: File; key: string }) => {
-      setSending({
-        progress: { loaded: 0, total: file.size },
-        startedAt: Date.now(),
-      });
-      return upload<JobAccepted>(
-        "PUT",
-        "/api/v1/source/snapshot",
-        file,
-        {
-          "Content-Type": "application/json",
-          "Idempotency-Key": key,
-        },
-        (progress) => setSending((s) => s && { ...s, progress }),
+    mutationFn: async ({ file, key }: { file: File; key: string }) => {
+      const startedAt = Date.now();
+      const show = (stage: Sending["stage"], loaded: number) =>
+        setSending({
+          stage,
+          progress: { loaded, total: file.size },
+          startedAt,
+        });
+      show("receiving", 0);
+      let session = await startSourceUpload({ totalBytes: file.size });
+      while (session.receivedBytes < file.size) {
+        const offset = session.receivedBytes;
+        session = await upload<SourceUpload>(
+          "PUT",
+          `/api/v1/source/uploads/${session.uploadId}/chunks/${offset}`,
+          file.slice(offset, offset + session.chunkBytes),
+          { "Content-Type": "application/octet-stream" },
+          (p) => show("receiving", offset + p.loaded),
+        );
+      }
+      show("processing", 0);
+      const id = session.uploadId;
+      const poll = setInterval(
+        () =>
+          getSourceUpload(id).then(
+            (u) => show("processing", u.processedBytes),
+            () => undefined,
+          ),
+        700,
       );
+      try {
+        return await completeSourceUpload(id, {
+          headers: { "Idempotency-Key": key },
+        });
+      } finally {
+        clearInterval(poll);
+      }
     },
     onSettled: () => setSending(null),
     onSuccess: (accepted) => setJobId(accepted.jobId),

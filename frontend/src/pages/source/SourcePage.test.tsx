@@ -59,10 +59,31 @@ describe("SourcePage", () => {
     expect(calls.some((c) => c.method === "PUT")).toBe(false);
   });
 
-  it("uploads a valid snapshot and shows accepted counts and warnings", async () => {
+  const session = (totalBytes: number, receivedBytes: number) => ({
+    uploadId: "up-1",
+    totalBytes,
+    receivedBytes,
+    processedBytes: 0,
+    stage: "receiving",
+    chunkBytes: 8 << 20,
+    jobId: null,
+  });
+
+  it("uploads a valid snapshot in chunks and shows accepted counts and warnings", async () => {
     const calls = stubApi({
       "GET /api/v1/source/status": () => [200, status],
-      "PUT /api/v1/source/snapshot": () => [202, accepted("job-2")],
+      "POST /api/v1/source/uploads": (call) => [
+        201,
+        session((call.body as { totalBytes: number }).totalBytes, 0),
+      ],
+      "PUT /api/v1/source/uploads/up-1/chunks/0": (call) => [
+        200,
+        session((call.body as Blob).size, (call.body as Blob).size),
+      ],
+      "POST /api/v1/source/uploads/up-1/complete": () => [
+        202,
+        accepted("job-2"),
+      ],
       "GET /api/v1/jobs/job-2": () => [
         200,
         {
@@ -98,8 +119,9 @@ describe("SourcePage", () => {
 
     expect(await screen.findByText("Предупреждения: 1")).toBeTruthy();
     expect(screen.getByText("Старый prolong_wait")).toBeTruthy();
-    const put = calls.find((c) => c.method === "PUT")!;
-    expect(JSON.parse(await (put.body as Blob).text())).toEqual(snapshot);
-    expect(put.headers.get("Idempotency-Key")).toBeTruthy();
+    const chunk = calls.find((c) => c.method === "PUT")!;
+    expect(JSON.parse(await (chunk.body as Blob).text())).toEqual(snapshot);
+    const complete = calls.find((c) => c.url.endsWith("/complete"))!;
+    expect(complete.headers.get("Idempotency-Key")).toBeTruthy();
   });
 });

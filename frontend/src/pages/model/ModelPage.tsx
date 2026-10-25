@@ -346,7 +346,7 @@ export function ModelPage() {
           type="button"
           className="btn btn-ghost"
           disabled={!formState.isDirty}
-          onClick={() => reset(toForm(settings))}
+          onClick={() => reset(toForm(settings), { keepDirtyValues: false })}
         >
           Отменить изменения
         </button>
